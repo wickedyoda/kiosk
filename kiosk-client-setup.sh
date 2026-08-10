@@ -29,22 +29,15 @@
 set -euo pipefail
 
 # --- Default configuration ---
-KIOSK_URL=""
-KIOSK_SCALE="1.0"
-KIOSK_INVERT="false"
-KIOSK_USER="root"
-KIOSK_SLIDESHOW_INTERVAL="15"
-KIOSK_ACTION=""
-WEATHER_ZIP_CODE=""
-WEATHER_API_KEY=""
-
-# --- Parse env vars (from sudo VAR=value bash form) ---
-if [ -n "${KIOSK_URL:-}" ]; then KIOSK_URL="${KIOSK_URL}"; fi
-if [ -n "${KIOSK_SCALE:-}" ]; then KIOSK_SCALE="${KIOSK_SCALE}"; fi
-if [ -n "${KIOSK_INVERT:-}" ]; then KIOSK_INVERT="${KIOSK_INVERT}"; fi
-if [ -n "${KIOSK_USER:-}" ]; then KIOSK_USER="${KIOSK_USER}"; fi
-if [ -n "${KIOSK_SLIDESHOW_INTERVAL:-}" ]; then KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL}"; fi
-if [ -n "${KIOSK_ACTION:-}" ]; then KIOSK_ACTION="${KIOSK_ACTION}"; fi
+# Check env vars BEFORE setting defaults (env vars may already be set by sudo)
+KIOSK_URL="${KIOSK_URL:-}"
+KIOSK_SCALE="${KIOSK_SCALE:-1.0}"
+KIOSK_INVERT="${KIOSK_INVERT:-false}"
+KIOSK_USER="${KIOSK_USER:-root}"
+KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL:-15}"
+KIOSK_ACTION="${KIOSK_ACTION:-}"
+WEATHER_ZIP_CODE="${WEATHER_ZIP_CODE:-}"
+WEATHER_API_KEY="${WEATHER_API_KEY:-}"
 
 # Parse positional arguments
 for arg in "$@"; do
