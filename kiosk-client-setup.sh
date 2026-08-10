@@ -390,7 +390,8 @@ $CHROMIUM_BIN \\
   --disable-features=Translate \\
   --disable-web-security \\
   --allow-running-insecure-content \\
-  --disable-gpu-compositing \\
+  --no-sandbox \\
+  --user-data-dir=/root/.config/kioskuim \\
   "$KIOSK_URL"
 KIOSK_EOF
 
