@@ -2,12 +2,12 @@
 #
 # Kiosk Client Setup & Reconfiguration Script
 #
-# Sets up a Debian 12/13 (bookworm/trixie) headless host as a kiosk client, OR
+# Sets up a Debian or Ubuntu headless host as a kiosk client, OR
 # reconfigures an existing kiosk client with new settings.
 #
 # Features:
-#   - Detects Debian 12/13 and installs minimal Xorg + Chromium
-#   - Creates/updates /etc/systemd/system/kiosk.service for kiosk mode
+#   - Detects Debian or Ubuntu and installs minimal Xorg + Chromium
+#   - Configures a systemd service for kiosk mode
 #   - Creates/updates /root/kiosk-start.sh with kiosk URL and settings
 #   - Configures boot to graphical.target
 #   - Idempotent: safe to re-run for reconfiguration
@@ -19,8 +19,13 @@
 #   sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
 #
 # Prerequisites:
-#   - Debian 12 (Bookworm) or Debian 13 (Trixie), no GUI installed
+#   - Debian 12+ or Ubuntu 22.04+ (headless, no GUI)
 #   - Network access to the kiosk web server
+#
+# Exit codes:
+#   0 — Success
+#   1 — Invalid arguments or OS not supported
+#   2 — Package installation failed
 #
 set -euo pipefail
 
@@ -31,14 +36,14 @@ KIOSK_INVERT="${KIOSK_INVERT:-false}"
 KIOSK_USER="${KIOSK_USER:-root}"
 KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL:-15}"
 
-# Parse positional argument KIOSK_URL=<value>
+# Parse positional arguments like KIOSK_URL=<value>
 for arg in "$@"; do
     case "$arg" in
-        KIOSK_URL=*) KIOSK_URL="${arg#KIOSK_URL=}" ;;
-        KIOSK_SCALE=*) KIOSK_SCALE="${arg#KIOSK_SCALE=}" ;;
-        KIOSK_INVERT=*) KIOSK_INVERT="${arg#KIOSK_INVERT=}" ;;
-        KIOSK_USER=*) KIOSK_USER="${arg#KIOSK_USER=}" ;;
-        KIOSK_SLIDESHOW_INTERVAL=*) KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}" ;;
+        KIOSK_URL=*)                 KIOSK_URL="${arg#KIOSK_URL=}" ;;
+        KIOSK_SCALE=*)               KIOSK_SCALE="${arg#KIOSK_SCALE=}" ;;
+        KIOSK_INVERT=*)              KIOSK_INVERT="${arg#KIOSK_INVERT=}" ;;
+        KIOSK_USER=*)                KIOSK_USER="${arg#KIOSK_USER=}" ;;
+        KIOSK_SLIDESHOW_INTERVAL=*)  KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}" ;;
     esac
 done
 
@@ -46,13 +51,13 @@ if [ -z "$KIOSK_URL" ]; then
     echo "Usage: KIOSK_URL=http://<server>:<port> sudo bash kiosk-client-setup.sh"
     echo ""
     echo "Example:"
-    echo "  KIOSK_URL=http://192.168.61.50:8080 sudo bash kiosk-client-setup.sh"
+    echo "  KIOSK_URL=http://docker1.tail99133.ts.net:8080 sudo bash kiosk-client-setup.sh"
     echo ""
     echo "Optional env vars:"
-    echo "  KIOSK_SCALE=1.5          — Calendar text scale (default: 1.0)"
-    echo "  KIOSK_INVERT=true        — Invert calendar colors (default: false)"
-    echo "  KIOSK_USER=root           — User to run kiosk as (default: root)"
-    echo "  KIOSK_SLIDESHOW_INTERVAL=5  — Photo shuffle interval in minutes (default: 15)"
+    echo "  KIOSK_SCALE=1.5              — Chromium device scale factor (default: 1.0)"
+    echo "  KIOSK_INVERT=true            — Invert calendar colors (default: false)"
+    echo "  KIOSK_USER=root              — User to run kiosk as (default: root)"
+    echo "  KIOSK_SLIDESHOW_INTERVAL=5   — Photo shuffle interval in minutes (default: 15)"
     exit 1
 fi
 
@@ -79,14 +84,25 @@ fi
 
 OS_NAME="${ID:-unknown}"
 OS_VERSION="${VERSION_ID:-unknown}"
+OS_LIKE="${ID_LIKE:-}"
 
 echo "Detected OS: $NAME ($VERSION)"
 echo ""
 
-# Validate Debian 12 or 13
-if [ "$OS_NAME" != "debian" ]; then
-    echo "WARNING: This script is designed for Debian. Detected: $OS_NAME"
-    echo "Continuing anyway..."
+# Validate Debian or Ubuntu
+SUPPORTED=0
+if [ "$OS_NAME" = "debian" ]; then
+    SUPPORTED=1
+elif [ "$OS_NAME" = "ubuntu" ]; then
+    SUPPORTED=1
+elif echo "$OS_LIKE" | grep -qw "debian"; then
+    SUPPORTED=1
+fi
+
+if [ "$SUPPORTED" -eq 0 ]; then
+    echo "ERROR: Unsupported OS. This script requires Debian or Ubuntu."
+    echo "Detected: OS=$OS_NAME VERSION=$OS_VERSION LIKES=$OS_LIKE"
+    exit 1
 fi
 
 # --- Step 1: Install Xorg and Chromium ---
@@ -94,26 +110,34 @@ echo "=== Step 1: Installing Xorg + Chromium ==="
 
 apt-get update -qq
 
+# Determine package list — Ubuntu and Debian 12+ use the same package names
+PACKAGES_XORG="xorg xserver-xorg-video-fbdev xinit x11-xserver-utils"
+PACKAGES_UNCLUTTER="unclutter"
+# unclutter-xfixes is better for Debian 12+, but unclutter works everywhere
+if [ "$OS_NAME" = "debian" ] && [ -n "$OS_VERSION" ] && [ "$(echo "$OS_VERSION" | cut -d. -f1)" -ge 12 ]; then
+    PACKAGES_UNCLUTTER="unclutter-xfixes"
+fi
+
 # Check what's already installed
 NEED_INSTALL=()
-if ! command -v xorg &>/dev/null && ! dpkg -l | grep -q "^ii.*xorg "; then
-    NEED_INSTALL+=(xorg xserver-xorg-video-fbdev xinit)
-fi
-
-if ! command -v chromium &>/dev/null && ! command -v chromium-browser &>/dev/null; then
-    NEED_INSTALL+=(chromium)
-fi
-
-# Additional useful packages
-for pkg in unclutter-xfixes x11-xserver-utils; do
+for pkg in $PACKAGES_XORG $PACKAGES_UNCLUTTER; do
     if ! dpkg -l | grep -q "^ii.*$pkg "; then
         NEED_INSTALL+=($pkg)
     fi
 done
 
+# Chromium
+if ! command -v chromium &>/dev/null && ! command -v chromium-browser &>/dev/null; then
+    NEED_INSTALL+=(chromium)
+fi
+
 if [ ${#NEED_INSTALL[@]} -gt 0 ]; then
     echo "Installing: ${NEED_INSTALL[*]}"
-    apt-get install -y -qq "${NEED_INSTALL[@]}"
+    if ! apt-get install -y -qq "${NEED_INSTALL[@]}"; then
+        echo "ERROR: Package installation failed."
+        echo "Try: sudo apt-get update && sudo apt-get install -y ${NEED_INSTALL[*]}"
+        exit 2
+    fi
 else
     echo "All packages already installed."
 fi
@@ -149,8 +173,12 @@ xset s off
 xset s noblank
 xset -dpms
 
-# Hide cursor
-unclutter -idle 2 -root 2>/dev/null &
+# Hide cursor (uses whichever is available)
+if command -v unclutter &>/dev/null; then
+    unclutter -idle 2 -root 2>/dev/null &
+elif command -v unclutter-xfixes &>/dev/null; then
+    unclutter-xfixes -idle 2 -root 2>/dev/null &
+fi
 
 # Start Chromium in kiosk mode
 $CHROMIUM_BIN \\
@@ -169,16 +197,13 @@ $CHROMIUM_BIN \\
 KIOSK_EOF
 
 chmod +x "$KIOSK_SCRIPT"
-
 echo "Kiosk script: $KIOSK_SCRIPT"
 
-# --- Step 3: Create/overwrite X wrapper script ---
+# --- Step 3: Create/overwrite X session ---
 echo "=== Step 3: Configuring X session ==="
 
-# Create a wrapper that starts X and runs the kiosk script
 cat > /root/.xinitrc << 'XINITRC_EOF'
 #!/bin/bash
-# X session init for kiosk
 xset s off
 xset s noblank
 xset -dpms
@@ -186,7 +211,6 @@ exec /root/kiosk-start.sh
 XINITRC_EOF
 chmod +x /root/.xinitrc
 
-# Configure .xsession for display managers
 cat > /root/.xsession << 'XSESSION_EOF'
 #!/bin/bash
 xset s off
@@ -196,7 +220,7 @@ exec /root/kiosk-start.sh
 XSESSION_EOF
 chmod +x /root/.xsession
 
-# --- Step 4: Configure auto-login + graphical target ---
+# --- Step 4: Configure graphical boot target ---
 echo "=== Step 4: Configuring boot to graphical target ==="
 systemctl set-default graphical.target 2>/dev/null || true
 
@@ -235,7 +259,6 @@ echo "Systemd service: $SYSTEMD_SERVICE"
 # --- Step 6: Create auto-login for getty (serial/console fallback) ---
 echo "=== Step 6: Configuring auto-login ==="
 
-# Configure getty auto-login on tty1
 GETTY_DIR="/etc/systemd/system/getty@tty1.service.d"
 mkdir -p "$GETTY_DIR"
 
@@ -246,10 +269,9 @@ ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 Type=idle
 GETTY_EOF
 
-# --- Step 7: Create a wrapper to launch X + kiosk from a simple session ---
+# --- Step 7: Create wrapper to launch X + kiosk ---
 echo "=== Step 7: Configuring session launch ==="
 
-# Create a simple session that starts X automatically
 cat > /usr/local/bin/start-kiosk-x << 'STARTX_EOF'
 #!/bin/bash
 # Start X server and run kiosk
@@ -263,6 +285,7 @@ echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "Configuration:"
+echo "  OS: $NAME $VERSION"
 echo "  Kiosk URL: $KIOSK_URL"
 echo "  Scale: $KIOSK_SCALE"
 echo "  Invert: $KIOSK_INVERT"
