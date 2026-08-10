@@ -159,8 +159,9 @@ sudo reboot
 | `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
 | `BASE_URL` | Public-facing URL when behind reverse proxy | _(empty)_ |
-| `DATA_PATH` | Host path for persistent data storage | `/root/docker/kiosk/data` |
-| `CACHE_PATH` | Host path for cache storage | `/root/docker/kiosk/cache` |
+| `DATA_PATH` | Data directory inside container (mapped to host via docker-compose) | `/app/data` |
+| `CACHE_MAX_SIZE_MB` | Max local thumbnail cache size | `1024` |
+| `CACHE_MAX_AGE_SECONDS` | Cache entry TTL before eviction | `86400` (24h) |
 
 ## Files
 
@@ -180,18 +181,25 @@ sudo reboot
 └── README.md            # This file
 ```
 
-## How It Works
+### How It Works
 
 ### Photo Slideshow (Left)
 1. On page load, the server calls `GET /api/shared-links/me?key={key}` to the Immich API
 2. This returns all assets in the shared link, including their IDs
-3. Each asset's thumbnail URL is: `GET /api/assets/{assetId}/thumbnail?key={key}&size={size}`
-4. The browser displays thumbnails as a slideshow with crossfade transitions
-5. The page auto-reloads every `PAGE_REFRESH_INTERVAL_MINUTES` to pick up new photos
+3. Thumbnails are **downloaded and cached locally** on the Docker host (max 1GB) — the browser never contacts Immich directly (avoids CORS issues)
+4. Each image is served via a local proxy endpoint: `GET /photo/{assetId}`
+5. The slideshow uses crossfade transitions and auto-advances every `SLIDESHOW_INTERVAL_MINUTES`
+6. The page auto-reloads every `PAGE_REFRESH_INTERVAL_MINUTES` to pick up new photos
+7. Cache management:
+   - LRU eviction when total cache exceeds `CACHE_MAX_SIZE_MB` (default 1024 MB)
+   - Stale entries older than `CACHE_MAX_AGE_SECONDS` (default 86400 = 24h) are removed
+   - Entries for assets no longer in the album are deleted on each photo fetch
 
 ### Google Calendar (Right)
-- The calendar is embedded via an `<iframe>` pointing directly to the Google Calendar embed URL
-- It auto-refreshes every `CALENDAR_REFRESH_INTERVAL_MINUTES` by reloading the iframe
+- The calendar is embedded via an `<iframe>` in **Schedule (AGENDA) view**
+- Only events within a **2-week window** are displayed (via the `dates` URL parameter)
+- The date range is recalculated on each calendar refresh to keep the window current
+- It auto-refreshes every `CALENDAR_REFRESH_INTERVAL_MINUTES` by reloading the iframe with an updated URL
 - No Google API authentication is needed — just a public calendar
 
 ## Troubleshooting
