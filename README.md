@@ -90,8 +90,8 @@ nano .env
 # 2. Start the server
 docker compose up -d --build
 
-# 3. On a client machine, run the kiosk setup
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash
+# 3. On a client machine, run the kiosk setup (interactive menu)
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
 sudo reboot
 ```
 

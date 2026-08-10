@@ -15,7 +15,7 @@
 #
 # Usage:
 #   # Interactive mode (prompts for action and settings)
-#   curl -s https://raw.githubusercontent.com/wickedyoka/kiosk/main/kiosk-client-setup.sh | sudo bash
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
 #
 #   # Non-interactive (pass env vars)
 #   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 bash
