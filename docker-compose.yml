@@ -2,7 +2,10 @@ services:
   kiosk:
     build: .
     ports:
-      - "${WEB_PORT:-8081}:8080"
+      - "${WEB_PORT:-8080}:8080"
     env_file:
       - .env
+    volumes:
+      - "${DATA_PATH:-/root/docker/kiosk/data}:/app/data"
+      - "${CACHE_PATH:-/root/docker/kiosk/cache}:/app/cache"
     restart: unless-stopped

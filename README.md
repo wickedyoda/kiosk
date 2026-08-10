@@ -51,6 +51,14 @@ IMMICH_THUMB_SIZE=large                       # Thumbnail size from Immich
 
 ### 2. Start the web server
 
+First, create the data directories on the Docker host:
+
+```bash
+sudo mkdir -p /root/docker/kiosk/data /root/docker/kiosk/cache
+```
+
+Then start the server:
+
 ```bash
 docker compose up -d
 ```
@@ -148,9 +156,11 @@ sudo reboot
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
 | `WEB_PORT` | Port for the web server | `8080` |
-| `IMMICH_THUMB_SIZE` | Thumbnail size from Immich | `large` |
+| `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
 | `BASE_URL` | Public-facing URL when behind reverse proxy | _(empty)_ |
+| `DATA_PATH` | Host path for persistent data storage | `/root/docker/kiosk/data` |
+| `CACHE_PATH` | Host path for cache storage | `/root/docker/kiosk/cache` |
 
 ## Files
 
