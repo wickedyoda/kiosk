@@ -269,6 +269,10 @@ sudo reboot
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
 | `CALENDAR_SCALE` | Scale factor for calendar content (e.g. 1.5, 2.0) | `2.0` |
 | `CALENDAR_INVERT` | Invert calendar colors for kiosk display | `true` |
+| `WEATHER_ZIP_CODE` | US ZIP code for weather overlay (empty = disabled) | _(empty)_ |
+| `WEATHER_API_KEY` | OpenWeatherMap API key (if WEATHER_ZIP_CODE is set) | _(empty)_ |
+| `WEATHER_UNITS` | `imperial` (°F) or `metric` (°C) | `imperial` |
+| `WEATHER_REFRESH_MINUTES` | Weather refresh interval (default 240, min 120) | `240` |
 | `WEB_PORT` | Port for the web server | `8080` |
 | `WEB_HOST` | Bind address for the web server | `0.0.0.0` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
