@@ -196,8 +196,19 @@ Then point your client's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
 Run the setup script on your Debian 12/13 headless client:
 
 ```bash
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<your-server-ip>:8080 KIOSK_ACTION=install bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
+sudo bash kiosk-client-setup.sh
 ```
+
+This will show an interactive menu:
+
+```
+  1) Install a NEW kiosk (fails if already installed)
+  2) UPDATE existing kiosk settings (requires existing installation)
+  3) Uninstall and remove the kiosk
+```
+
+After selecting option 1, the script will prompt for the kiosk URL.
 
 Then reboot:
 
