@@ -14,13 +14,16 @@
 #   - Supports "remove" mode to cleanly uninstall kiosk and restore desktop
 #
 # Usage:
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server>:8080 sudo bash
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 bash
 #   # Or with remove mode:
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_ACTION=remove sudo bash
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash
 #
 # Or (if already cloned):
-#   sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
-#   sudo ./kiosk-client-setup.sh KIOSK_ACTION=remove
+#   sudo KIOSK_URL=http://<server>:8080 bash kiosk-client-setup.sh
+#   sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh
+#
+# Note: sudo strips unknown env vars by default. Use the form above
+# (sudo VAR=value bash) to ensure KIOSK_URL is passed through.
 #
 # Prerequisites:
 #   - Debian 12+ or Ubuntu 22.04+ (headless, no GUI)
@@ -133,16 +136,17 @@ fi
 # --- Setup mode ---
 
 if [ -z "$KIOSK_URL" ]; then
-    echo "Usage: KIOSK_URL=http://<server>:<port> sudo bash kiosk-client-setup.sh"
+    echo "Usage: sudo KIOSK_URL=http://<server>:<port> bash kiosk-client-setup.sh"
     echo ""
     echo "Example:"
-    echo "  KIOSK_URL=http://docker1.tail99133.ts.net:8080 sudo bash kiosk-client-setup.sh"
+    echo "  curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://docker1.tail99133.ts.net:8080 bash"
     echo ""
     echo "Optional env vars:"
     echo "  KIOSK_SCALE=1.5              — Chromium device scale factor (default: 1.0)"
     echo "  KIOSK_INVERT=true            — Invert calendar colors (default: false)"
     echo "  KIOSK_USER=root              — User to run kiosk as (default: root)"
     echo "  KIOSK_SLIDESHOW_INTERVAL=5   — Photo shuffle interval in minutes (default: 15)"
+    echo "  WEATHER_ZIP_CODE=71417       — US ZIP code for weather overlay"
     echo ""
     echo "Other actions:"
     echo "  KIOSK_ACTION=remove            — Remove kiosk and restore standard desktop"
