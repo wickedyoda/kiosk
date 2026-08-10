@@ -14,17 +14,13 @@
 #   - Supports interactive menu: install, update, or remove
 #
 # Usage:
-#   # Interactive mode (prompts for action and settings)
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
-#
-#   # Non-interactive (pass env vars)
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 bash
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash
-#
-# Or (if already cloned):
+#   # For interactive menu: save script first, then run
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
 #   sudo bash kiosk-client-setup.sh
-#   sudo bash kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
-#   sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh
+#
+#   # Non-interactive (pass env vars - works with pipe)
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=install bash
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash
 #
 # Prerequisites:
 #   - Debian 12+ or Ubuntu 22.04+ (headless, no GUI)
@@ -73,6 +69,15 @@ if [ -f /etc/systemd/system/kiosk.service ]; then
     KIOSK_INSTALLED=1
 fi
 
+# --- Check if running interactively (stdin is a terminal) ---
+# When piped via curl | sudo bash, stdin is not a terminal, so
+# interactive prompts won't work. We need to tell the user to save
+# the script first.
+CAN_READ_TTY=0
+if [ -t 0 ]; then
+    CAN_READ_TTY=1
+fi
+
 # --- Interactive prompt if no action specified ---
 if [ -z "$KIOSK_ACTION" ]; then
     echo "=== Kiosk Client Management ==="
@@ -83,7 +88,20 @@ if [ -z "$KIOSK_ACTION" ]; then
     echo "  2) UPDATE existing kiosk settings (requires existing installation)"
     echo "  3) Uninstall and remove the kiosk"
     echo ""
-    read -rp "Select an option (1/2/3): " choice </dev/tty
+    if [ "$CAN_READ_TTY" -eq 1 ]; then
+        read -rp "Select an option (1/2/3): " choice
+    else
+        echo ""
+        echo "ERROR: Interactive mode requires a terminal. You are running this script piped via curl."
+        echo "Please save the script first and run it directly:"
+        echo "  curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh"
+        echo "  sudo KIOSK_URL=http://your-server:8080 bash kiosk-client-setup.sh"
+        echo ""
+        echo "Or specify the action directly as an environment variable:"
+        echo "  curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash"
+        echo "  curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=install bash"
+        exit 1
+    fi
     echo ""
     case "$choice" in
         1) KIOSK_ACTION="install";;
@@ -178,7 +196,7 @@ if [ "$KIOSK_ACTION" = "install" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
     echo "ERROR: A kiosk is already installed."
     echo "Use option 2 (Update) to modify settings, or option 3 (Uninstall) to remove."
     echo ""
-    read -rp "Continue anyway and overwrite? (y/N) " overwrite </dev/tty
+    read -rp "Continue anyway and overwrite? (y/N) " overwrite
     if [ "$overwrite" != "y" ] && [ "$overwrite" != "Y" ]; then
         echo "Aborting."
         exit 0
@@ -194,7 +212,7 @@ if [ "$KIOSK_ACTION" = "update" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
             echo "Current kiosk URL: $CURRENT_URL"
             echo ""
             echo "Enter new URL (or press Enter to keep current):"
-            read -rp "KIOSK_URL: " NEW_URL </dev/tty
+            read -rp "KIOSK_URL: " NEW_URL
             if [ -n "$NEW_URL" ]; then
                 KIOSK_URL="$NEW_URL"
             else
@@ -209,7 +227,7 @@ fi
 if [ -z "$KIOSK_URL" ]; then
     echo ""
     echo "Enter the kiosk server URL (e.g. http://docker1.tail99133.ts.net:8080):"
-    read -rp "KIOSK_URL: " KIOSK_URL </dev/tty
+    read -rp "KIOSK_URL: " KIOSK_URL
     if [ -z "$KIOSK_URL" ]; then
         echo "ERROR: KIOSK_URL is required."
         exit 1
@@ -264,7 +282,7 @@ if [ "$SUPPORTED" -eq 0 ]; then
     echo ""
     echo "Supported: Debian 12+, Ubuntu 22.04+"
     echo ""
-    read -rp "Continue anyway? (y/N) " cont </dev/tty
+    read -rp "Continue anyway? (y/N) " cont
     if [ "$cont" ! = "y" ] && [ "$cont" != "Y" ]; then
         echo "Aborting."
         exit 1

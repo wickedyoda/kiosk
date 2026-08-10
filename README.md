@@ -90,8 +90,9 @@ nano .env
 # 2. Start the server
 docker compose up -d --build
 
-# 3. On a client machine, run the kiosk setup (interactive menu)
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
+# 3. On a client machine, save script and run setup
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
+sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash kiosk-client-setup.sh
 sudo reboot
 ```
 
@@ -233,7 +234,8 @@ cp .env.example .env
 docker compose up -d --build
 
 # Then run the kiosk client setup pointing to localhost
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://localhost:8080 KIOSK_ACTION=install bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
+sudo KIOSK_URL=http://localhost:8080 KIOSK_ACTION=install bash kiosk-client-setup.sh
 sudo reboot
 ```
 
@@ -250,7 +252,8 @@ cp .env.example .env
 docker compose up -d --build
 
 # On each kiosk client
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
+sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash kiosk-client-setup.sh
 sudo reboot
 ```
 
@@ -337,10 +340,13 @@ sudo reboot
 
 ## Client Script Usage
 
-The `kiosk-client-setup.sh` script offers **three actions** via an interactive prompt:
+The `kiosk-client-setup.sh` script offers **three actions** via an interactive prompt.
+
+### For interactive menu (save script first):
 
 ```bash
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh -o kiosk-client-setup.sh
+sudo bash kiosk-client-setup.sh
 ```
 
 You'll see:
@@ -351,23 +357,20 @@ What would you like to do?
   3) Uninstall and remove the kiosk
 ```
 
-### Non-interactive mode
-
-Skip the prompt by passing `KIOSK_ACTION` as an env var:
+### For non-interactive mode (works with pipe):
 
 ```bash
 # Install new kiosk
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
-  | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=install bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=install bash
 
 # Update existing kiosk
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
-  | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=update bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=update bash
 
 # Remove kiosk
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
-  | sudo KIOSK_ACTION=remove bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash
 ```
+
+> **Note:** When piping via `curl | sudo bash`, stdin is not a terminal so interactive prompts won't work. Either pass `KIOSK_ACTION` as an env var (non-interactive mode), or save the script to a file first and run it directly.
 
 ### Environment Variables
 
