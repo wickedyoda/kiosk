@@ -1,145 +1,281 @@
 #!/bin/bash
 #
-# Kiosk Client Setup Script for Raspberry Pi (Raspbian / Raspberry Pi OS)
+# Kiosk Client Setup & Reconfiguration Script
 #
-# This script:
-#   1. Installs Chromium browser
-#   2. Creates a systemd service that launches the Pi in kiosk mode
-#   3. Points Chromium to the kiosk web server URL
+# Sets up a Debian 12/13 (bookworm/trixie) headless host as a kiosk client, OR
+# reconfigures an existing kiosk client with new settings.
+#
+# Features:
+#   - Detects Debian 12/13 and installs minimal Xorg + Chromium
+#   - Creates/updates /etc/systemd/system/kiosk.service for kiosk mode
+#   - Creates/updates /root/kiosk-start.sh with kiosk URL and settings
+#   - Configures boot to graphical.target
+#   - Idempotent: safe to re-run for reconfiguration
 #
 # Usage:
-#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://YOUR-KIOSK-SERVER:8080 sudo bash
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server>:8080 sudo bash
 #
-# Or after cloning:
-#   sudo ./kiosk-client-setup.sh KIOSK_URL=http://YOUR-KIOSK-SERVER:8080
+# Or (if already cloned):
+#   sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
 #
-# Requirements:
-#   - Raspberry Pi running Raspberry Pi OS (64-bit recommended)
-#   - The kiosk web server must be reachable from the Pi
-#   - The Pi must boot to the desktop (Graphical UI enabled)
-
+# Prerequisites:
+#   - Debian 12 (Bookworm) or Debian 13 (Trixie), no GUI installed
+#   - Network access to the kiosk web server
+#
 set -euo pipefail
 
-# --- Parse arguments ---
+# --- Configuration from environment / arguments ---
 KIOSK_URL="${KIOSK_URL:-}"
+KIOSK_SCALE="${KIOSK_SCALE:-1.0}"
+KIOSK_INVERT="${KIOSK_INVERT:-false}"
+KIOSK_USER="${KIOSK_USER:-root}"
+KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL:-15}"
+
+# Parse positional argument KIOSK_URL=<value>
+for arg in "$@"; do
+    case "$arg" in
+        KIOSK_URL=*) KIOSK_URL="${arg#KIOSK_URL=}" ;;
+        KIOSK_SCALE=*) KIOSK_SCALE="${arg#KIOSK_SCALE=}" ;;
+        KIOSK_INVERT=*) KIOSK_INVERT="${arg#KIOSK_INVERT=}" ;;
+        KIOSK_USER=*) KIOSK_USER="${arg#KIOSK_USER=}" ;;
+        KIOSK_SLIDESHOW_INTERVAL=*) KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}" ;;
+    esac
+done
+
 if [ -z "$KIOSK_URL" ]; then
     echo "Usage: KIOSK_URL=http://<server>:<port> sudo bash kiosk-client-setup.sh"
-    echo "Example: KIOSK_URL=http://192.168.1.100:8080 sudo bash kiosk-client-setup.sh"
+    echo ""
+    echo "Example:"
+    echo "  KIOSK_URL=http://192.168.61.50:8080 sudo bash kiosk-client-setup.sh"
+    echo ""
+    echo "Optional env vars:"
+    echo "  KIOSK_SCALE=1.5          — Calendar text scale (default: 1.0)"
+    echo "  KIOSK_INVERT=true        — Invert calendar colors (default: false)"
+    echo "  KIOSK_USER=root           — User to run kiosk as (default: root)"
+    echo "  KIOSK_SLIDESHOW_INTERVAL=5  — Photo shuffle interval in minutes (default: 15)"
     exit 1
 fi
 
 # Strip trailing slash
 KIOSK_URL=$(echo "$KIOSK_URL" | sed 's:/*$::')
 
+# --- OS Detection ---
 echo "=== Kiosk Client Setup ==="
 echo "Kiosk URL: $KIOSK_URL"
+echo "Scale: $KIOSK_SCALE"
+echo "Invert: $KIOSK_INVERT"
+echo "Slideshow interval: ${KIOSK_SLIDESHOW_INTERVAL}m"
 echo ""
 
-# --- Step 1: Install Chromium ---
-echo "Installing Chromium browser..."
-sudo apt-get update -qq
-sudo apt-get install -y -qq chromium-browser x11-xserver-utils unclutter xset
+export DEBIAN_FRONTEND=noninteractive
 
-# --- Step 2: Create kiosk autostart script ---
-KIOSK_SCRIPT="/home/pi/kiosk-start.sh"
-echo "Creating kiosk start script at $KIOSK_SCRIPT..."
-sudo tee "$KIOSK_SCRIPT" > /dev/null <<'EOF'
+# --- Detect OS ---
+if [ ! -f /etc/os-release ]; then
+    echo "ERROR: Cannot detect OS. /etc/os-release not found."
+    exit 1
+fi
+
+. /etc/os-release
+
+OS_NAME="${ID:-unknown}"
+OS_VERSION="${VERSION_ID:-unknown}"
+
+echo "Detected OS: $NAME ($VERSION)"
+echo ""
+
+# Validate Debian 12 or 13
+if [ "$OS_NAME" != "debian" ]; then
+    echo "WARNING: This script is designed for Debian. Detected: $OS_NAME"
+    echo "Continuing anyway..."
+fi
+
+# --- Step 1: Install Xorg and Chromium ---
+echo "=== Step 1: Installing Xorg + Chromium ==="
+
+apt-get update -qq
+
+# Check what's already installed
+NEED_INSTALL=()
+if ! command -v xorg &>/dev/null && ! dpkg -l | grep -q "^ii.*xorg "; then
+    NEED_INSTALL+=(xorg xserver-xorg-video-fbdev xinit)
+fi
+
+if ! command -v chromium &>/dev/null && ! command -v chromium-browser &>/dev/null; then
+    NEED_INSTALL+=(chromium)
+fi
+
+# Additional useful packages
+for pkg in unclutter-xfixes x11-xserver-utils; do
+    if ! dpkg -l | grep -q "^ii.*$pkg "; then
+        NEED_INSTALL+=($pkg)
+    fi
+done
+
+if [ ${#NEED_INSTALL[@]} -gt 0 ]; then
+    echo "Installing: ${NEED_INSTALL[*]}"
+    apt-get install -y -qq "${NEED_INSTALL[@]}"
+else
+    echo "All packages already installed."
+fi
+
+# Determine chromium binary
+if command -v chromium &>/dev/null; then
+    CHROMIUM_BIN="chromium"
+elif command -v chromium-browser &>/dev/null; then
+    CHROMIUM_BIN="chromium-browser"
+else
+    echo "ERROR: Chromium not found after installation."
+    exit 1
+fi
+
+echo "Chromium: $CHROMIUM_BIN"
+
+# --- Step 2: Create/overwrite kiosk start script ---
+echo "=== Step 2: Creating kiosk start script ==="
+
+KIOSK_SCRIPT="/root/kiosk-start.sh"
+
+cat > "$KIOSK_SCRIPT" << KIOSK_EOF
 #!/bin/bash
+#
+# Kiosk start script — auto-generated by kiosk-client-setup.sh
+# URL: $KIOSK_URL
+# Scale: $KIOSK_SCALE
+# Invert: $KIOSK_INVERT
+#
 
 # Disable screen blanking and power management
 xset s off
 xset s noblank
 xset -dpms
 
-# Hide cursor after 2 seconds of inactivity
-unclutter -idle 2 -root &
+# Hide cursor
+unclutter -idle 2 -root 2>/dev/null &
 
 # Start Chromium in kiosk mode
-# --noerrdialogs: suppress error dialogs
-# --disable-infobars: hide the "automation" info bar
-# --no-first-run: skip first-run setup
-# --kiosk: fullscreen kiosk mode
-# --disable-features=Translate: disable translation bar
-# --force-device-scale-factor=1: avoid scaling issues
-chromium-browser \
-  --noerrdialogs \
-  --disable-infobars \
-  --no-first-run \
-  --kiosk \
-  --disable-features=Translate \
-  --force-device-scale-factor=1 \
-  --disable-web-security \
-  --allow-running-insecure-content \
-  KIOSK_URL_PLACEHOLDER
-EOF
+$CHROMIUM_BIN \\
+  --noerrdialogs \\
+  --disable-infobars \\
+  --no-first-run \\
+  --no-default-browser-check \\
+  --disable-session-crashed-bubble \\
+  --kiosk \\
+  --force-device-scale-factor=$KIOSK_SCALE \\
+  --disable-features=Translate \\
+  --disable-web-security \\
+  --allow-running-insecure-content \\
+  --disable-gpu-compositing \\
+  "$KIOSK_URL"
+KIOSK_EOF
 
-# Replace placeholder with actual URL
-sudo sed -i "s|KIOSK_URL_PLACEHOLDER|$KIOSK_URL|g" "$KIOSK_SCRIPT"
-sudo chmod +x "$KIOSK_SCRIPT"
+chmod +x "$KIOSK_SCRIPT"
 
-# --- Step 3: Autostart on boot ---
-AUTOSTART_DIR="/home/pi/.config/lxsession/LXDE-pi"
-AUTOSTART_FILE="$AUTOSTART_DIR/autostart"
+echo "Kiosk script: $KIOSK_SCRIPT"
 
-echo "Setting up autostart..."
-mkdir -p "$AUTOSTART_DIR"
+# --- Step 3: Create/overwrite X wrapper script ---
+echo "=== Step 3: Configuring X session ==="
 
-# Write the autostart file (overwrites any existing one)
-cat > "$AUTOSTART_FILE" <<'EOF'
-@lxpanel --profile LXDE-pi
-@pcmanfm --desktop --profile LXDE-pi
-@xscreensaver -no-splash
-@/home/pi/kiosk-start.sh
-EOF
+# Create a wrapper that starts X and runs the kiosk script
+cat > /root/.xinitrc << 'XINITRC_EOF'
+#!/bin/bash
+# X session init for kiosk
+xset s off
+xset s noblank
+xset -dpms
+exec /root/kiosk-start.sh
+XINITRC_EOF
+chmod +x /root/.xinitrc
 
-# --- Step 4: Disable screensaver and screen blanking system-wide ---
-XSESSION_FILE="/etc/xdg/lxsession/LXDE-pi/desktop.conf"
-if [ -f "$XSESSION_FILE" ]; then
-    sudo sed -i 's/#@xterm/@chromium-browser/g' "$XSESSION_FILE" 2>/dev/null || true
-fi
+# Configure .xsession for display managers
+cat > /root/.xsession << 'XSESSION_EOF'
+#!/bin/bash
+xset s off
+xset s noblank
+xset -dpms
+exec /root/kiosk-start.sh
+XSESSION_EOF
+chmod +x /root/.xsession
 
-# --- Step 5: Configure Pi to auto-login to desktop on boot ---
-echo "Configuring auto-login to desktop..."
-sudo raspi-config nonint do_boot_bsp 2>/dev/null || true   # boot to desktop
-sudo raspi-config nonint do_boot_wait 0  2>/dev/null || true  # no wait for network
+# --- Step 4: Configure auto-login + graphical target ---
+echo "=== Step 4: Configuring boot to graphical target ==="
+systemctl set-default graphical.target 2>/dev/null || true
 
-# --- Step 6: Create systemd service for kiosk (alternative method) ---
+# --- Step 5: Create/overwrite systemd service ---
+echo "=== Step 5: Creating systemd service ==="
+
 SYSTEMD_SERVICE="/etc/systemd/system/kiosk.service"
-echo "Creating systemd kiosk service..."
-sudo tee "$SYSTEMD_SERVICE" > /dev/null <<'EOF'
+
+cat > "$SYSTEMD_SERVICE" << 'SYSTEMD_EOF'
 [Unit]
-Description=Pi Kiosk Mode
-After=graphical.target
+Description=Kiosk Mode
+After=graphical-session.target
+Wants=graphical-session.target
 
 [Service]
-User=pi
-Group=pi
+Type=simple
+User=root
+Group=root
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
-ExecStart=/home/pi/kiosk-start.sh
+Environment=XAUTHORITY=/root/.Xauthority
+ExecStart=/root/kiosk-start.sh
 Restart=always
-RestartSec=5
+RestartSec=3
+StandardInput=tty
 
 [Install]
 WantedBy=graphical.target
-EOF
+SYSTEMD_EOF
 
-sudo chmod 644 "$SYSTEMD_SERVICE"
-sudo systemctl daemon-reload
-echo "Systemd service created (will activate on next boot)"
+chmod 644 "$SYSTEMD_SERVICE"
+systemctl daemon-reload
+systemctl enable kiosk.service 2>/dev/null || true
 
-# --- Step 7: Disable swap (optional but recommended for kiosk stability) ---
-# sudo dphys-swapfile swapoff
-# sudo dphys-swapfile swapon
+echo "Systemd service: $SYSTEMD_SERVICE"
 
+# --- Step 6: Create auto-login for getty (serial/console fallback) ---
+echo "=== Step 6: Configuring auto-login ==="
+
+# Configure getty auto-login on tty1
+GETTY_DIR="/etc/systemd/system/getty@tty1.service.d"
+mkdir -p "$GETTY_DIR"
+
+cat > "$GETTY_DIR/override.conf" << 'GETTY_EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+Type=idle
+GETTY_EOF
+
+# --- Step 7: Create a wrapper to launch X + kiosk from a simple session ---
+echo "=== Step 7: Configuring session launch ==="
+
+# Create a simple session that starts X automatically
+cat > /usr/local/bin/start-kiosk-x << 'STARTX_EOF'
+#!/bin/bash
+# Start X server and run kiosk
+exec startx /root/.xinitrc -- -nocursor -nolisten tcp -noreset
+STARTX_EOF
+
+chmod +x /usr/local/bin/start-kiosk-x
+
+# --- Summary ---
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "The Pi will now boot into kiosk mode on next reboot."
-echo "Kiosk is pointing to: $KIOSK_URL"
+echo "Configuration:"
+echo "  Kiosk URL: $KIOSK_URL"
+echo "  Scale: $KIOSK_SCALE"
+echo "  Invert: $KIOSK_INVERT"
+echo "  Slideshow: every ${KIOSK_SLIDESHOW_INTERVAL}m"
+echo "  User: $KIOSK_USER"
 echo ""
-echo "To test now, run: /home/pi/kiosk-start.sh"
-echo "To reboot: sudo reboot"
+echo "Files created:"
+echo "  $KIOSK_SCRIPT — kiosk start script"
+echo "  /root/.xinitrc — X session init"
+echo "  /root/.xsession — display manager session"
+echo "  $SYSTEMD_SERVICE — systemd service"
 echo ""
-echo "Note: Make sure the Pi can reach the kiosk server at $KIOSK_URL"
-echo "If using a local server, ensure the firewall allows the connection."
+echo "To start now: sudo systemctl start kiosk.service"
+echo "Or reboot: sudo reboot"
+echo ""
+echo "To reconfigure later, just re-run this script with new KIOSK_URL."
