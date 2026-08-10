@@ -53,14 +53,71 @@ _last_fetch: float = 0
 _cache_ttl = 60  # seconds
 
 
+async def _fetch_album_assets(
+    client: httpx.AsyncClient,
+    api_base: str,
+    auth_params: dict,
+    album_id: str,
+) -> list[str]:
+    """
+    Fetch all asset thumbnail URLs from an Immich album via search/metadata.
+
+    Uses POST /api/search/metadata with albumIds filter to get all assets.
+    Handles pagination to fetch all assets (not just the first page).
+    """
+    photo_urls = []
+    page = 1
+    page_size = 100
+
+    while True:
+        payload = {
+            "albumIds": [album_id],
+            "size": page_size,
+            "page": page,
+        }
+        resp = await client.post(
+            f"{api_base}/search/metadata",
+            params=auth_params,
+            json=payload,
+        )
+
+        if resp.status_code != 200:
+            logger.error(
+                "Failed to fetch album assets: HTTP %s — %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+            break
+
+        data = resp.json()
+        assets = data.get("assets", {})
+        items = assets.get("items", [])
+        total = assets.get("total", 0)
+
+        for asset in items:
+            asset_id = asset.get("id")
+            if asset_id:
+                thumb_url = f"{api_base}/assets/{asset_id}/thumbnail?key={IMMICH_SHARED_LINK_KEY}&size={IMMICH_THUMB_SIZE}"
+                photo_urls.append(thumb_url)
+
+        # Stop if we got fewer items than the page size, or no items at all
+        if len(items) < page_size:
+            break
+        page += 1
+
+    return photo_urls
+
+
 async def fetch_immich_photos() -> list[str]:
     """
     Fetch all asset thumbnail URLs from the Immich shared link.
 
     Flow:
       1. GET /api/shared-links/me?key={key} — resolves the shared link key to
-         a SharedLinkResponseDto containing all assets.
-      2. Build thumbnail URLs: /api/assets/{assetId}/thumbnail?key={key}&size={size}
+         a SharedLinkResponseDto containing the album ID and metadata.
+      2. POST /api/search/metadata?key={key} with albumIds filter — fetches
+         all assets in the album (paginated).
+      3. Build thumbnail URLs: /api/assets/{assetId}/thumbnail?key={key}&size={size}
 
     The shared link key acts as auth for these endpoints — no API key needed.
     """
@@ -77,12 +134,13 @@ async def fetch_immich_photos() -> list[str]:
         return _cached_photos
 
     api_base = f"{IMMICH_URL}/api"
+    auth_params = {"key": IMMICH_SHARED_LINK_KEY}
 
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            me_url = f"{api_base}/shared-links/me"
-            logger.info("Fetching shared link info from %s?key=...", me_url)
-            resp = await client.get(me_url, params={"key": IMMICH_SHARED_LINK_KEY})
+            # Step 1: Get the shared link info (to find the album ID)
+            logger.info("Fetching shared link info from %s", f"{api_base}/shared-links/me")
+            resp = await client.get(f"{api_base}/shared-links/me", params=auth_params)
 
             if resp.status_code != 200:
                 logger.error(
@@ -95,7 +153,21 @@ async def fetch_immich_photos() -> list[str]:
                 return _cached_photos
 
             link_data = resp.json()
+            album = link_data.get("album")
+
+            # If this is an album-type shared link, get assets via search/metadata
+            # If the shared link already has assets in the response, use those
             assets = link_data.get("assets", [])
+
+            if not assets and album and album.get("id"):
+                # Fallback: search for assets in the album via search/metadata endpoint
+                album_id = album["id"]
+                logger.info("Fetching assets for album %s via search/metadata", album_id)
+                photo_urls = await _fetch_album_assets(client, api_base, auth_params, album_id)
+                logger.info("Fetched %d photos from Immich album", len(photo_urls))
+                _cached_photos = photo_urls
+                _last_fetch = now
+                return _cached_photos
 
             if not assets:
                 logger.warning("No assets found in shared link")
@@ -103,6 +175,7 @@ async def fetch_immich_photos() -> list[str]:
                 _last_fetch = now
                 return _cached_photos
 
+            # Build thumbnail URLs from assets returned directly in shared link
             photo_urls = []
             for asset in assets:
                 asset_id = asset.get("id")
