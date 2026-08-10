@@ -62,6 +62,8 @@ GOOGLE_CALENDAR_URL = os.environ.get(
     "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showTabs=0&showPrint=0&showCalendars=0&showTz=0",
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
+CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "2"))
+CALENDAR_INVERT = os.environ.get("CALENDAR_INVERT", "true").lower() in ("true", "1", "yes")
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
@@ -373,6 +375,8 @@ async def kiosk_page(request: Request):
         page_refresh_ms=page_refresh_ms,
         calendar_refresh_seconds=calendar_refresh_seconds,
         google_calendar_url=GOOGLE_CALENDAR_URL,
+        calendar_scale=CALENDAR_SCALE,
+        calendar_invert=CALENDAR_INVERT,
     )
     return html
 
