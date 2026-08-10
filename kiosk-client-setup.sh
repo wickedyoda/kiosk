@@ -83,7 +83,7 @@ if [ -z "$KIOSK_ACTION" ]; then
     echo "  2) UPDATE existing kiosk settings (requires existing installation)"
     echo "  3) Uninstall and remove the kiosk"
     echo ""
-    read -rp "Select an option (1/2/3): " choice
+    read -rp "Select an option (1/2/3): " choice </dev/tty
     echo ""
     case "$choice" in
         1) KIOSK_ACTION="install";;
@@ -178,7 +178,7 @@ if [ "$KIOSK_ACTION" = "install" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
     echo "ERROR: A kiosk is already installed."
     echo "Use option 2 (Update) to modify settings, or option 3 (Uninstall) to remove."
     echo ""
-    read -rp "Continue anyway and overwrite? (y/N) " overwrite
+    read -rp "Continue anyway and overwrite? (y/N) " overwrite </dev/tty
     if [ "$overwrite" != "y" ] && [ "$overwrite" != "Y" ]; then
         echo "Aborting."
         exit 0
@@ -194,7 +194,7 @@ if [ "$KIOSK_ACTION" = "update" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
             echo "Current kiosk URL: $CURRENT_URL"
             echo ""
             echo "Enter new URL (or press Enter to keep current):"
-            read -rp "KIOSK_URL: " NEW_URL
+            read -rp "KIOSK_URL: " NEW_URL </dev/tty
             if [ -n "$NEW_URL" ]; then
                 KIOSK_URL="$NEW_URL"
             else
@@ -209,7 +209,7 @@ fi
 if [ -z "$KIOSK_URL" ]; then
     echo ""
     echo "Enter the kiosk server URL (e.g. http://docker1.tail99133.ts.net:8080):"
-    read -rp "KIOSK_URL: " KIOSK_URL
+    read -rp "KIOSK_URL: " KIOSK_URL </dev/tty
     if [ -z "$KIOSK_URL" ]; then
         echo "ERROR: KIOSK_URL is required."
         exit 1
@@ -264,7 +264,7 @@ if [ "$SUPPORTED" -eq 0 ]; then
     echo ""
     echo "Supported: Debian 12+, Ubuntu 22.04+"
     echo ""
-    read -rp "Continue anyway? (y/N) " cont
+    read -rp "Continue anyway? (y/N) " cont </dev/tty
     if [ "$cont" ! = "y" ] && [ "$cont" != "Y" ]; then
         echo "Aborting."
         exit 1
