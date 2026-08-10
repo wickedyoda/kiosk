@@ -150,6 +150,7 @@ sudo reboot
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
 | `WEB_PORT` | Port for the web server | `8080` |
+| `WEB_HOST` | Bind address for the web server | `0.0.0.0` |
 | `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
 | `BASE_URL` | Public-facing URL when behind reverse proxy | _(empty)_ |
