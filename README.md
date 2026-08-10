@@ -91,7 +91,7 @@ nano .env
 docker compose up -d --build
 
 # 3. On a client machine, run the kiosk setup
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash
 sudo reboot
 ```
 
@@ -195,7 +195,7 @@ Then point your client's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
 Run the setup script on your Debian 12/13 headless client:
 
 ```bash
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<your-server-ip>:8080 bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<your-server-ip>:8080 KIOSK_ACTION=install bash
 ```
 
 Then reboot:
@@ -233,7 +233,7 @@ cp .env.example .env
 docker compose up -d --build
 
 # Then run the kiosk client setup pointing to localhost
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://localhost:8080 bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://localhost:8080 KIOSK_ACTION=install bash
 sudo reboot
 ```
 
@@ -250,7 +250,7 @@ cp .env.example .env
 docker compose up -d --build
 
 # On each kiosk client
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 KIOSK_ACTION=install bash
 sudo reboot
 ```
 
@@ -346,8 +346,8 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 You'll see:
 ```
 What would you like to do?
-  1) Install a new kiosk (or reconfigure existing)
-  2) Update existing kiosk settings
+  1) Install a NEW kiosk (fails if already installed)
+  2) UPDATE existing kiosk settings (requires existing installation)
   3) Uninstall and remove the kiosk
 ```
 
@@ -356,9 +356,13 @@ What would you like to do?
 Skip the prompt by passing `KIOSK_ACTION` as an env var:
 
 ```bash
-# Install/Reconfigure
+# Install new kiosk
 curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
-  | sudo KIOSK_URL=http://<server>:8080 KIOSK_SCALE=1.5 bash
+  | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=install bash
+
+# Update existing kiosk
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
+  | sudo KIOSK_URL=http://<server>:8080 KIOSK_ACTION=update bash
 
 # Remove kiosk
 curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
@@ -374,7 +378,7 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 | `KIOSK_INVERT` | Invert calendar colors | `false` |
 | `KIOSK_USER` | User to run as | `root` |
 | `KIOSK_SLIDESHOW_INTERVAL` | Photo shuffle interval (min) | `15` |
-| `KIOSK_ACTION` | `setup`, `remove`, `install`, `update`, `uninstall` | _(interactive prompt)_ |
+| `KIOSK_ACTION` | `install`, `update`, `remove` | _(interactive prompt)_ |
 
 ---
 
@@ -409,10 +413,10 @@ docker exec -it kiosk-app-1 cat /app/logs/kiosk.log  # View file logs
 To change log verbosity, set `LOG_LEVEL` in `.env` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`.
 
 ### Reconfiguring a client
-To change the kiosk URL or settings on an existing client, simply re-run the script with the new values:
+To change the kiosk URL or settings on an existing client:
 
 ```bash
-sudo KIOSK_URL=http://<new-server>:<port> bash kiosk-client-setup.sh
+sudo KIOSK_URL=http://<new-server>:<port> KIOSK_ACTION=update bash kiosk-client-setup.sh
 sudo reboot
 ```
 

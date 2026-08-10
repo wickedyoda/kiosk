@@ -79,15 +79,20 @@ if [ -z "$KIOSK_ACTION" ]; then
     echo ""
     echo "What would you like to do?"
     echo ""
-    echo "  1) Install a new kiosk (or reconfigure existing)"
-    echo "  2) Update existing kiosk settings"
+    echo "  1) Install a NEW kiosk (fails if already installed)"
+    echo "  2) UPDATE existing kiosk settings (requires existing installation)"
     echo "  3) Uninstall and remove the kiosk"
     echo ""
     read -rp "Select an option (1/2/3): " choice
     echo ""
     case "$choice" in
-        1) KIOSK_ACTION="setup";;
-        2) KIOSK_ACTION="setup";;  # Reconfigure = setup with existing env
+        1) KIOSK_ACTION="install";;
+        2)
+            if [ "$KIOSK_INSTALLED" -eq 0 ]; then
+                echo "ERROR: No existing kiosk installation found. Choose option 1 to install first."
+                exit 1
+            fi
+            KIOSK_ACTION="update";;
         3) KIOSK_ACTION="remove";;
         *) echo "ERROR: Invalid option '$choice'"; exit 1;;
     esac
@@ -167,15 +172,34 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
     exit 0
 fi
 
-# --- Setup mode ---
-# If updating an existing kiosk, load current settings
-if [ "$KIOSK_ACTION" = "setup" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
-    echo "=== Reconfiguring existing kiosk ==="
+# --- Setup mode (install or update) ---
+# Handle install vs update actions
+if [ "$KIOSK_ACTION" = "install" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
+    echo "ERROR: A kiosk is already installed."
+    echo "Use option 2 (Update) to modify settings, or option 3 (Uninstall) to remove."
+    echo ""
+    read -rp "Continue anyway and overwrite? (y/N) " overwrite
+    if [ "$overwrite" != "y" ] && [ "$overwrite" != "Y" ]; then
+        echo "Aborting."
+        exit 0
+    fi
+fi
+
+if [ "$KIOSK_ACTION" = "update" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
+    echo "=== Updating existing kiosk ==="
     # Try to read current KIOSK_URL from the start script
     if [ -f /root/kiosk-start.sh ]; then
         CURRENT_URL=$(grep 'Kiosk URL:' /root/kiosk-start.sh 2>/dev/null | head -1 | sed 's/.*URL: //' || true)
         if [ -n "$CURRENT_URL" ] && [ -z "$KIOSK_URL" ]; then
             echo "Current kiosk URL: $CURRENT_URL"
+            echo ""
+            echo "Enter new URL (or press Enter to keep current):"
+            read -rp "KIOSK_URL: " NEW_URL
+            if [ -n "$NEW_URL" ]; then
+                KIOSK_URL="$NEW_URL"
+            else
+                KIOSK_URL="$CURRENT_URL"
+            fi
         fi
     fi
     echo ""
@@ -439,7 +463,11 @@ chmod +x /usr/local/bin/start-kiosk-x
 
 # --- Summary ---
 echo ""
-echo "=== Setup Complete ==="
+if [ "$KIOSK_ACTION" = "update" ]; then
+    echo "=== Update Complete ==="
+else
+    echo "=== Setup Complete ==="
+fi
 echo ""
 echo "Configuration:"
 echo "  OS: $NAME $VERSION"
