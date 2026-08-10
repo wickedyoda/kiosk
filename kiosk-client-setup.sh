@@ -158,11 +158,17 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
         echo "  Removed: /usr/local/bin/start-kiosk-x"
     fi
 
-    # Remove getty auto-login override
+    # Remove getty auto-login override (kept for backward compat)
     if [ -f /etc/systemd/system/getty@tty1.service.d/override.conf ]; then
         rm -f /etc/systemd/system/getty@tty1.service.d/override.conf
         rmdir /etc/systemd/system/getty@tty1.service.d/ 2>/dev/null || true
         echo "  Removed: getty auto-login override"
+    fi
+
+    # Remove Xwrapper config
+    if [ -f /etc/X11/Xwrapper.config ]; then
+        rm -f /etc/X11/Xwrapper.config
+        echo "  Removed: /etc/X11/Xwrapper.config"
     fi
 
     # Restore default boot target to multi-user
@@ -394,6 +400,17 @@ echo "Kiosk script: $KIOSK_SCRIPT"
 # --- Step 3: Create X session ---
 echo "=== Step 3: Configuring X session ==="
 
+# Configure Xwrapper to allow starting Xorg from systemd (not just console)
+if [ -f /etc/X11/Xwrapper.config ] || [ -d /etc/X11 ]; then
+    mkdir -p /etc/X11
+    cat > /etc/X11/Xwrapper.config << 'XWRAPPER_EOF'
+# Allow Xorg to start from systemd service (not just physical console)
+allowed_users=anybody
+needs_root_rights=yes
+XWRAPPER_EOF
+    echo "  Configured: /etc/X11/Xwrapper.config (allowed_users=anybody)"
+fi
+
 cat > /root/.xinitrc << 'XINITRC_EOF'
 #!/bin/bash
 xset s off
@@ -427,16 +444,14 @@ Description=Kiosk Mode
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=root
 Group=root
 ExecStart=/usr/local/bin/start-kiosk-x
 Restart=always
 RestartSec=3
-StandardInput=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target
@@ -454,6 +469,7 @@ echo "=== Step 6: Configuring session launch ==="
 cat > /usr/local/bin/start-kiosk-x << 'STARTX_EOF'
 #!/bin/bash
 # Start X server and run kiosk
+# Use startx with X wrapper to avoid tty conflicts
 exec startx /root/.xinitrc -- -nocursor -nolisten tcp -noreset
 STARTX_EOF
 
