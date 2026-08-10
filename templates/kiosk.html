@@ -49,18 +49,14 @@
       opacity: 1;
     }
 
-    /* Right side — Google Calendar with inverted colors and 2x text */
+    /* Right side — Google Calendar with configurable scale and invert */
     #calendar-container {
       flex: 1;
       position: relative;
       overflow: hidden;
       background: #fff;
-      /* Invert colors and scale content to 2x for readability on kiosk displays */
-      transform: scale(2);
-      transform-origin: 0 0;
-      width: 50%;
-      height: 50%;
-      filter: invert(1);
+      /* Inverse scale: container shrinks to compensate for the iframe's scale transform.
+         e.g. scale(2) on iframe → container is 50% size so scaled content fills the space */
     }
 
     #calendar-frame {
@@ -68,6 +64,13 @@
       height: 100%;
       border: none;
       display: block;
+      /* Scale content and invert colors — values from .env */
+      transform: scale({{ calendar_scale }});
+      transform-origin: 0 0;
+      {% if calendar_invert %}filter: invert(1);{% endif %}
+      /* Compensate for the scale by sizing to inverse */
+      width: calc(100% / {{ calendar_scale }});
+      height: calc(100% / {{ calendar_scale }});
     }
 
     /* Small indicator in corner */
@@ -98,7 +101,7 @@
     </div>
 
     <!-- Right: Google Calendar (Schedule/AGENDA view, fills entire area) -->
-    <!-- Calendar is inverted and scaled 2x via the container CSS for kiosk readability -->
+    <!-- Calendar is inverted and scaled via .env CALENDAR_SCALE and CALENDAR_INVERT -->
     <div id="calendar-container">
       <iframe
         id="calendar-frame"
