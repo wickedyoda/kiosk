@@ -3,22 +3,26 @@ Kiosk Web Server
 
 Serves a full-screen kiosk page with:
   - Left side: slideshow of photos from an Immich shared album
-  - Right side: embedded Google Calendar
+  - Right side: embedded Google Calendar in schedule (AGENDA) view
 
 Photos are fetched from the Immich API via the shared link key (no user auth needed).
+Thumbnails are cached locally (max 1GB) and removed when deleted from the album.
 The calendar is embedded via an iframe to the Google Calendar public embed URL.
 """
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import os
 import time
-
 from contextlib import asynccontextmanager
+from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -33,12 +37,23 @@ IMMICH_THUMB_SIZE = os.environ.get("IMMICH_THUMB_SIZE", "large")
 SLIDESHOW_INTERVAL_MINUTES = int(os.environ.get("SLIDESHOW_INTERVAL_MINUTES", "15"))
 GOOGLE_CALENDAR_URL = os.environ.get(
     "GOOGLE_CALENDAR_URL",
-    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago",
+    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showTabs=0&showPrint=0&showCalendars=0&showTz=0",
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
+
+# Data and cache paths — inside the container, always /app/data
+DATA_DIR = Path(os.environ.get("DATA_PATH", "/app/data"))
+CACHE_DIR = DATA_DIR / "thumbnails"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Cache limits
+MAX_CACHE_SIZE_BYTES = int(
+    os.environ.get("CACHE_MAX_SIZE_MB", "1024")
+) * 1024 * 1024  # default 1GB
+CACHE_TTL_SECONDS = int(os.environ.get("CACHE_MAX_AGE_SECONDS", "86400"))  # 24h default
 
 # --- Jinja2 environment for inline HTML rendering ---
 env = Environment(
@@ -47,25 +62,77 @@ env = Environment(
     auto_reload=True,
 )
 
-# Cache for photo URLs — refreshed on each API call
-_cached_photos: list[str] | None = None
-_last_fetch: float = 0
-_cache_ttl = 60  # seconds
 
+# ---------------------------------------------------------------------------
+# Cache management
+# ---------------------------------------------------------------------------
+
+def _asset_cache_path(asset_id: str) -> Path:
+    """Return the local file path for a cached asset thumbnail."""
+    return CACHE_DIR / f"{asset_id}.jpg"
+
+
+def _cache_cleanup():
+    """Remove stale cache entries (older than CACHE_TTL_SECONDS) and enforce size limit."""
+    now = time.time()
+    removed = 0
+    freed = 0
+
+    # Delete stale files
+    for f in CACHE_DIR.glob("*.jpg"):
+        try:
+            mtime = f.stat().st_mtime
+            if now - mtime > CACHE_TTL_SECONDS:
+                freed += f.stat().st_size
+                f.unlink()
+                removed += 1
+        except OSError:
+            pass
+
+    # Enforce max cache size (LRU eviction)
+    while True:
+        total = sum(f.stat().st_size for f in CACHE_DIR.glob("*.jpg"))
+        if total <= MAX_CACHE_SIZE_BYTES:
+            break
+        # Remove oldest by mtime
+        oldest = min(CACHE_DIR.glob("*.jpg"), key=lambda f: f.stat().st_mtime)
+        total -= oldest.stat().st_size
+        oldest.unlink()
+        removed += 1
+        freed += oldest.stat().st_size
+
+    if removed:
+        logger.info("Cache cleanup: removed %d files, freed %.1f MB", removed, freed / (1024 * 1024))
+
+
+def _cache_sync(current_ids: set[str]):
+    """Remove cache entries for assets no longer in the album."""
+    current_ids_lower = current_ids
+    removed = 0
+    for f in CACHE_DIR.glob("*.jpg"):
+        asset_id = f.stem
+        if asset_id not in current_ids_lower:
+            f.unlink()
+            removed += 1
+    if removed:
+        logger.info("Cache sync: removed %d stale entries", removed)
+
+
+# ---------------------------------------------------------------------------
+# Immich API
+# ---------------------------------------------------------------------------
 
 async def _fetch_album_assets(
     client: httpx.AsyncClient,
     api_base: str,
     auth_params: dict,
     album_id: str,
-) -> list[str]:
+) -> list[dict]:
     """
-    Fetch all asset thumbnail URLs from an Immich album via search/metadata.
-
-    Uses POST /api/search/metadata with albumIds filter to get all assets.
-    Handles pagination to fetch all assets (not just the first page).
+    Fetch all assets from an Immich album via search/metadata.
+    Returns list of asset dicts with at least 'id' key.
     """
-    photo_urls = []
+    assets = []
     page = 1
     page_size = 100
 
@@ -90,22 +157,46 @@ async def _fetch_album_assets(
             break
 
         data = resp.json()
-        assets = data.get("assets", {})
-        items = assets.get("items", [])
-        total = assets.get("total", 0)
+        items = data.get("assets", {}).get("items", [])
 
-        for asset in items:
-            asset_id = asset.get("id")
-            if asset_id:
-                thumb_url = f"{api_base}/assets/{asset_id}/thumbnail?key={IMMICH_SHARED_LINK_KEY}&size={IMMICH_THUMB_SIZE}"
-                photo_urls.append(thumb_url)
+        for item in items:
+            assets.append(item)
 
-        # Stop if we got fewer items than the page size, or no items at all
+        # Stop if we got fewer items than the page size
         if len(items) < page_size:
             break
         page += 1
 
-    return photo_urls
+    return assets
+
+
+async def _cache_asset(client: httpx.AsyncClient, api_base: str, auth_params: dict, asset_id: str) -> str:
+    """Download and cache a thumbnail locally. Returns the local proxy URL."""
+    cache_path = _asset_cache_path(asset_id)
+    proxy_url = f"/photo/{asset_id}"
+
+    # If already cached and fresh, return proxy URL
+    if cache_path.exists():
+        cache_path.touch()  # update mtime
+        return proxy_url
+
+    # Download the thumbnail
+    thumb_url = f"{api_base}/assets/{asset_id}/thumbnail"
+    resp = await client.get(thumb_url, params=auth_params)
+    if resp.status_code != 200:
+        logger.warning("Failed to download thumbnail for %s: HTTP %s", asset_id, resp.status_code)
+        return proxy_url  # return proxy URL anyway; the proxy endpoint will return placeholder on miss
+
+    cache_path.write_bytes(resp.content)
+    logger.debug("Cached thumbnail for %s (%.1f KB)", asset_id, len(resp.content) / 1024)
+    return proxy_url
+
+
+# Cache for photo URLs — refreshed on each API call
+_cached_photos: list[str] | None = None
+_cached_asset_ids: set[str] | None = None
+_last_fetch: float = 0
+_cache_ttl = 60  # seconds
 
 
 async def fetch_immich_photos() -> list[str]:
@@ -114,14 +205,15 @@ async def fetch_immich_photos() -> list[str]:
 
     Flow:
       1. GET /api/shared-links/me?key={key} — resolves the shared link key to
-         a SharedLinkResponseDto containing the album ID and metadata.
+         a SharedLinkResponseDto containing the album ID.
       2. POST /api/search/metadata?key={key} with albumIds filter — fetches
          all assets in the album (paginated).
-      3. Build thumbnail URLs: /api/assets/{assetId}/thumbnail?key={key}&size={size}
+      3. Cache thumbnails locally via the proxy endpoint.
+      4. Build local proxy URLs: /photo/{assetId}
 
     The shared link key acts as auth for these endpoints — no API key needed.
     """
-    global _cached_photos, _last_fetch
+    global _cached_photos, _cached_asset_ids, _last_fetch
 
     now = time.time()
     if _cached_photos is not None and (now - _last_fetch) < _cache_ttl:
@@ -130,6 +222,7 @@ async def fetch_immich_photos() -> list[str]:
     if not IMMICH_SHARED_LINK_KEY:
         logger.warning("IMMICH_SHARED_LINK_KEY is not set; photo list will be empty")
         _cached_photos = []
+        _cached_asset_ids = set()
         _last_fetch = now
         return _cached_photos
 
@@ -149,13 +242,13 @@ async def fetch_immich_photos() -> list[str]:
                     resp.text[:200],
                 )
                 _cached_photos = []
+                _cached_asset_ids = set()
                 _last_fetch = now
                 return _cached_photos
 
             link_data = resp.json()
             album = link_data.get("album")
 
-            # If this is an album-type shared link, get assets via search/metadata
             # If the shared link already has assets in the response, use those
             assets = link_data.get("assets", [])
 
@@ -163,33 +256,43 @@ async def fetch_immich_photos() -> list[str]:
                 # Fallback: search for assets in the album via search/metadata endpoint
                 album_id = album["id"]
                 logger.info("Fetching assets for album %s via search/metadata", album_id)
-                photo_urls = await _fetch_album_assets(client, api_base, auth_params, album_id)
-                logger.info("Fetched %d photos from Immich album", len(photo_urls))
-                _cached_photos = photo_urls
-                _last_fetch = now
-                return _cached_photos
+                raw_assets = await _fetch_album_assets(client, api_base, auth_params, album_id)
+                # Convert to the format expected below
+                assets = [{"id": a["id"]} for a in raw_assets]
+            elif assets:
+                assets = [{"id": a["id"]} for a in assets]
 
             if not assets:
                 logger.warning("No assets found in shared link")
                 _cached_photos = []
+                _cached_asset_ids = set()
                 _last_fetch = now
                 return _cached_photos
 
-            # Build thumbnail URLs from assets returned directly in shared link
+            # Cache thumbnails and build proxy URLs
             photo_urls = []
+            current_asset_ids = set()
             for asset in assets:
                 asset_id = asset.get("id")
                 if asset_id:
-                    thumb_url = f"{api_base}/assets/{asset_id}/thumbnail?key={IMMICH_SHARED_LINK_KEY}&size={IMMICH_THUMB_SIZE}"
-                    photo_urls.append(thumb_url)
+                    current_asset_ids.add(asset_id)
+                    proxy_url = await _cache_asset(client, api_base, auth_params, asset_id)
+                    photo_urls.append(proxy_url)
 
-            logger.info("Fetched %d photos from Immich shared link", len(photo_urls))
+            # Sync cache: remove entries for assets no longer in album
+            _cache_sync(current_asset_ids)
+            # Cleanup stale/oversized cache
+            _cache_cleanup()
+
+            logger.info("Fetched %d photos from Immich album, cached thumbnails", len(photo_urls))
             _cached_photos = photo_urls
+            _cached_asset_ids = current_asset_ids
             _last_fetch = now
             return _cached_photos
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
         logger.error("Error fetching photos from Immich: %s", e)
         _cached_photos = []
+        _cached_asset_ids = set()
         _last_fetch = now
         return _cached_photos
 
@@ -204,14 +307,16 @@ async def lifespan(app: FastAPI):
     logger.info("  CALENDAR_REFRESH_INTERVAL=%dm", CALENDAR_REFRESH_INTERVAL_MINUTES)
     logger.info("  TRUST_PROXY=%s", TRUST_PROXY)
     logger.info("  BASE_URL=%s", BASE_URL or "(auto-detect)")
+    logger.info("  CACHE_DIR=%s", CACHE_DIR)
+    logger.info("  CACHE_MAX_SIZE=%d MB", MAX_CACHE_SIZE_BYTES // (1024 * 1024))
     asyncio.create_task(fetch_immich_photos())
     yield
     logger.info("Shutting down kiosk server...")
 
 
 # Enable proxy header handling when behind a reverse proxy (Nginx, Traefik, etc.)
-# root_path handles path-based routing; the middleware below sets the correct
-# base URL when behind a proxy that forwards to a subpath.
+# root_path handles path-based routing; the middleware below removes X-Frame-Options
+# for kiosk embedding when TRUST_PROXY is enabled.
 root_path = os.environ.get("BASE_URL", "")
 app = FastAPI(title="Kiosk", lifespan=lifespan, root_path=root_path)
 
@@ -256,6 +361,37 @@ async def api_photos():
         content=json.dumps({"photos": photos, "count": len(photos)}),
         media_type="application/json",
     )
+
+
+@app.get("/photo/{asset_id}", response_class=HTMLResponse)
+async def photo_proxy(asset_id: str, request: Request):
+    """Serve a cached thumbnail locally (avoids CORS issues when loading from Immich)."""
+    cache_path = _asset_cache_path(asset_id)
+
+    if cache_path.exists():
+        # Serve cached file
+        content = cache_path.read_bytes()
+        return Response(content=content, media_type="image/jpeg")
+
+    # Not cached — try to fetch it now (one-time fetch)
+    api_base = f"{IMMICH_URL}/api"
+    auth_params = {"key": IMMICH_SHARED_LINK_KEY}
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(f"{api_base}/assets/{asset_id}/thumbnail", params=auth_params)
+            if resp.status_code == 200:
+                cache_path.write_bytes(resp.content)
+                _cache_cleanup()
+                return Response(content=resp.content, media_type="image/jpeg")
+            logger.warning("Failed to fetch thumbnail for %s: HTTP %s", asset_id, resp.status_code)
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
+        logger.error("Error fetching thumbnail %s: %s", asset_id, e)
+
+    # Return placeholder 1x1 transparent PNG
+    placeholder = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    )
+    return Response(content=placeholder, media_type="image/png")
 
 
 @app.get("/health")

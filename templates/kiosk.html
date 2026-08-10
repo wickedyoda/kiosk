@@ -78,19 +78,19 @@
     <!-- Left: Photo Slideshow -->
     <div id="slideshow-container">
       {% for photo in photos %}
-      <img src="{{ photo }}" alt="Kiosk Photo" />
+      <img src="{{ photo }}" alt="Kiosk Photo" loading="lazy" />
       {% endfor %}
       {% if not photos %}
-      <img src="/static/placeholder.jpg" alt="No photos available" />
+      <div style="color: #fff; text-align: center; padding: 20px;">No photos available</div>
       {% endif %}
     </div>
 
-    <!-- Right: Google Calendar -->
+    <!-- Right: Google Calendar (Schedule/AGENDA view, fills entire area) -->
     <iframe
       id="calendar-frame"
-      class="calendar-frame"
       src="{{ google_calendar_url }}"
       title="Google Calendar"
+      loading="lazy"
     ></iframe>
   </div>
 
@@ -109,6 +109,7 @@
     }
 
     function nextSlide() {
+      if (slides.length === 0) return;
       slideIndex = (slideIndex + 1) % slides.length;
       showSlide(slideIndex);
     }
@@ -124,11 +125,10 @@
     const calendarFrame = document.getElementById('calendar-frame');
 
     function refreshCalendar() {
-      // Force reload the iframe by resetting its src
       const src = calendarFrame.src;
       calendarFrame.src = 'about:blank';
       setTimeout(() => {
-        calendarFrame.src = src + (src.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        calendarFrame.src = src.split('?')[0] + (src.includes('?') ? '?' : '?') + '_t=' + Date.now();
       }, 100);
     }
 

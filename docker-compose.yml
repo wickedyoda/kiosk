@@ -7,5 +7,4 @@ services:
       - .env
     volumes:
       - "${DATA_PATH:-/root/docker/kiosk/data}:/app/data"
-      - "${CACHE_PATH:-/root/docker/kiosk/cache}:/app/cache"
     restart: unless-stopped
