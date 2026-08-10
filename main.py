@@ -15,7 +15,9 @@ import base64
 import hashlib
 import json
 import logging
+import logging.handlers
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,8 +29,28 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+# --- Logging configuration ---
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "DEBUG").upper()
+LOG_DIR = Path(os.environ.get("LOG_DIR", "/app/logs"))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Determine numeric log level
+_numeric_level = getattr(logging, LOG_LEVEL, logging.DEBUG)
+
+# Configure root logger
+logging.basicConfig(
+    level=_numeric_level,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.handlers.RotatingFileHandler(
+            LOG_DIR / "kiosk.log",
+            maxBytes=50 * 1024 * 1024,  # 50MB per file
+            backupCount=5,
+        ),
+    ],
+)
+logger = logging.getLogger("kiosk")
 
 # --- Configuration from environment ---
 IMMICH_URL = os.environ.get("IMMICH_URL", "https://photos.yourdomain.com").rstrip("/")
@@ -309,6 +331,8 @@ async def lifespan(app: FastAPI):
     logger.info("  BASE_URL=%s", BASE_URL or "(auto-detect)")
     logger.info("  CACHE_DIR=%s", CACHE_DIR)
     logger.info("  CACHE_MAX_SIZE=%d MB", MAX_CACHE_SIZE_BYTES // (1024 * 1024))
+    logger.info("  LOG_LEVEL=%s", LOG_LEVEL)
+    logger.info("  LOG_DIR=%s", LOG_DIR)
     asyncio.create_task(fetch_immich_photos())
     yield
     logger.info("Shutting down kiosk server...")

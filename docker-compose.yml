@@ -7,7 +7,9 @@ services:
       - .env
     volumes:
       - kiosk-data:/app/data
+      - kiosk-logs:/app/logs
     restart: unless-stopped
 
 volumes:
   kiosk-data:
+  kiosk-logs:

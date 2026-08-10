@@ -51,13 +51,7 @@ IMMICH_THUMB_SIZE=large                       # Thumbnail size from Immich
 
 ### 2. Start the web server
 
-First, create the data directories on the Docker host:
-
-```bash
-sudo mkdir -p /root/docker/kiosk/data /root/docker/kiosk/cache
-```
-
-Then start the server:
+The data and logs are persisted using Docker named volumes (no manual directory creation needed):
 
 ```bash
 docker compose up -d
@@ -162,6 +156,8 @@ sudo reboot
 | `DATA_PATH` | Data directory inside container (mapped to host via docker-compose) | `/app/data` |
 | `CACHE_MAX_SIZE_MB` | Max local thumbnail cache size | `1024` |
 | `CACHE_MAX_AGE_SECONDS` | Cache entry TTL before eviction | `86400` (24h) |
+| `LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `DEBUG` |
+| `LOG_DIR` | Directory for log files (mapped to host via docker-compose) | `/app/logs` |
 
 ## Files
 
@@ -178,6 +174,7 @@ sudo reboot
 │   └── kiosk.html       # Kiosk page HTML template
 ├── static/              # Static assets (placeholder.jpg, etc.)
 ├── kiosk-client-setup.sh # Raspberry Pi setup script
+├── kiosk-client-setup-debian.sh # Debian/Ubuntu client setup script
 └── README.md            # This file
 ```
 
@@ -216,9 +213,28 @@ sudo reboot
 - The embed URL starts with `https://calendar.google.com/calendar/embed?src=...`
 
 ### Kiosk not starting on Pi
-- Ensure the Pi boots to desktop: `sudo raspi-config` → **Boot / Auto Login** → **Desktop Autologin**
-- Check Chromium installed: `chromium-browser --version`
-- Run the start script manually: `/home/pi/kiosk-start.sh`
+|- Ensure the Pi boots to desktop: `sudo raspi-config` → **Boot / Auto Login** → **Desktop Autologin**
+|- Check Chromium installed: `chromium-browser --version`
+|- Run the start script manually: `/home/pi/kiosk-start.sh`
+
+### Debian/Ubuntu client setup
+For Debian 12 or Ubuntu 22.04+ clients (not Raspberry Pi), use the Debian-specific setup script:
+
+```bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup-debian.sh | KIOSK_URL=http://<your-server-ip>:8080 sudo bash
+```
+
+This script auto-detects the desktop environment and configures auto-login accordingly.
+
+### Checking logs
+Logs are written to `/app/logs/kiosk.log` inside the container (mapped to a Docker volume). To view:
+
+```bash
+docker compose logs -f     # Stream container logs (stdout)
+docker exec -it app-app-1 cat /app/logs/kiosk.log  # View file logs
+```
+
+To change log verbosity, set `LOG_LEVEL` in `.env` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`.
 
 ## Security Notes
 
