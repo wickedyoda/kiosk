@@ -33,10 +33,12 @@ IMMICH_THUMB_SIZE = os.environ.get("IMMICH_THUMB_SIZE", "large")
 SLIDESHOW_INTERVAL_MINUTES = int(os.environ.get("SLIDESHOW_INTERVAL_MINUTES", "15"))
 GOOGLE_CALENDAR_URL = os.environ.get(
     "GOOGLE_CALENDAR_URL",
-    "https://calendar.google.com/calendar/embed?src=en.usa%23holiday%40group.v.calendar.google.com",
+    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago",
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
+BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
 
 # --- Jinja2 environment for inline HTML rendering ---
 env = Environment(
@@ -127,12 +129,28 @@ async def lifespan(app: FastAPI):
     logger.info("  SLIDESHOW_INTERVAL=%dm", SLIDESHOW_INTERVAL_MINUTES)
     logger.info("  PAGE_REFRESH_INTERVAL=%dm", PAGE_REFRESH_INTERVAL_MINUTES)
     logger.info("  CALENDAR_REFRESH_INTERVAL=%dm", CALENDAR_REFRESH_INTERVAL_MINUTES)
+    logger.info("  TRUST_PROXY=%s", TRUST_PROXY)
+    logger.info("  BASE_URL=%s", BASE_URL or "(auto-detect)")
     asyncio.create_task(fetch_immich_photos())
     yield
     logger.info("Shutting down kiosk server...")
 
 
-app = FastAPI(title="Kiosk", lifespan=lifespan)
+# Enable proxy header handling when behind a reverse proxy (Nginx, Traefik, etc.)
+# root_path handles path-based routing; the middleware below sets the correct
+# base URL when behind a proxy that forwards to a subpath.
+root_path = os.environ.get("BASE_URL", "")
+app = FastAPI(title="Kiosk", lifespan=lifespan, root_path=root_path)
+
+if TRUST_PROXY:
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        """Allow iframe embedding (kiosk needs to be embedded/fullscreen)."""
+        response = await call_next(request)
+        # Kiosk page needs to be embeddable; remove X-Frame-Options set by FastAPI
+        response.headers.pop("X-Frame-Options", None)
+        return response
+    logger.info("Reverse proxy mode enabled (TRUST_PROXY=true, root_path=%s)", root_path or "(none)")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

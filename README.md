@@ -51,11 +51,67 @@ IMMICH_THUMB_SIZE=large                       # Thumbnail size from Immich
 
 ### 2. Start the web server
 
+First, create the data directories on the Docker host:
+
+```bash
+sudo mkdir -p /root/docker/kiosk/data /root/docker/kiosk/cache
+```
+
+Then start the server:
+
 ```bash
 docker compose up -d
 ```
 
 The kiosk will be available at `http://<your-server-ip>:8080`.
+
+### Optional: Run behind a reverse proxy (Nginx)
+
+If you want to serve the kiosk over HTTPS or via a custom domain, set up Nginx as a reverse proxy.
+
+1. Set `TRUST_PROXY=true` and `BASE_URL` in `.env`:
+
+```bash
+TRUST_PROXY=true
+BASE_URL=https://kiosk.yourdomain.com
+```
+
+2. Example Nginx config (`/etc/nginx/sites-available/kiosk`):
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name kiosk.yourdomain.com;
+
+    # SSL (use your own certs — Let's Encrypt, etc.)
+    ssl_certificate /etc/ssl/certs/kiosk.crt;
+    ssl_certificate_key /etc/ssl/private/kiosk.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+3. Enable and reload Nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/kiosk /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+4. Restart the kiosk server to pick up the new env settings:
+
+```bash
+docker compose up -d --build
+```
+
+Then point your Pi's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
 
 ### 3. Find your Immich shared link key
 
@@ -100,6 +156,11 @@ sudo reboot
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
 | `WEB_PORT` | Port for the web server | `8080` |
+| `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
+| `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
+| `BASE_URL` | Public-facing URL when behind reverse proxy | _(empty)_ |
+| `DATA_PATH` | Host path for persistent data storage | `/root/docker/kiosk/data` |
+| `CACHE_PATH` | Host path for cache storage | `/root/docker/kiosk/cache` |
 
 ## Files
 
