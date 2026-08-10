@@ -78,26 +78,24 @@
       bottom: 0;
       left: 0;
       width: 100%;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.1);
       color: #fff;
-      font-size: 14px;
-      padding: 6px 10px;
+      font-size: 18px;
+      padding: 10px 16px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
       z-index: 10;
-      backdrop-filter: blur(2px);
+      box-sizing: border-box;
     }
 
     #weather-overlay img {
-      width: 24px;
-      height: 24px;
+      width: 32px;
+      height: 32px;
     }
 
-    /* Adjust for scaled calendar */
-    #calendar-frame {
-      /* The overlay sits on top of the calendar iframe at full container size */
-    }
+    /* Match the overlay font size to the calendar's visible text after scaling */
+    /* The iframe is scaled by CALENDAR_SCALE, so we keep overlay unscaled at 18px */
     {% endif %}
 
     /* Small indicator in corner */
