@@ -44,10 +44,9 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 1. **Installs packages**: Xorg, Chromium, xinit, unclutter
 2. **Creates `/root/kiosk-start.sh`**: Launches Chromium in kiosk mode
 3. **Configures X session files**: `/root/.xinitrc` and `/root/.xsession`
-4. **Sets boot target**: `graphical.target`
-5. **Creates systemd service**: `/etc/systemd/system/kiosk.service`
-6. **Configures auto-login**: getty autologin on tty1
-7. **Creates wrapper script**: `/usr/local/bin/start-kiosk-x`
+- **Sets boot target**: `multi-user.target` (systemd service handles X + Chromium) instead of `graphical.target`
+- **Creates systemd service**: `/etc/systemd/system/kiosk.service` (starts X + Chromium automatically at boot)
+- **Creates wrapper script**: `/usr/local/bin/start-kiosk-x` (launches X server)
 
 ## Configuration Options
 
@@ -91,10 +90,11 @@ apt-get autoremove -y
 ## Troubleshooting
 
 ### Kiosk doesn't start after reboot
-- Check: `systemctl get-default` should return `graphical.target`
-- Check Xorg: `ps aux | grep Xorg`
+- Check: `systemctl get-default` should return `multi-user.target`
+- Check kiosk service: `systemctl status kiosk.service`
+- Check Xorg: `ps aux | grep Xorg` (should be started by the systemd service)
 - Check Chromium: `chromium --version`
-- Run manually: `/root/kiosk-start.sh`
+- Run manually: `/usr/local/bin/start-kiosk-x`
 - Check logs: `journalctl -u kiosk.service -n 50`
 
 ### Black screen

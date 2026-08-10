@@ -9,9 +9,9 @@
 #   - Detects Debian/Ubuntu and installs minimal Xorg + Chromium
 #   - Creates/updates /etc/systemd/system/kiosk.service for kiosk mode
 #   - Creates/updates /root/kiosk-start.sh with kiosk URL and settings
-#   - Configures boot to graphical.target
+#   - Configures boot to multi-user.target (no login screen)
 #   - Idempotent: safe to re-run for reconfiguration
-#   - Supports "remove" mode to cleanly uninstall kiosk and restore desktop
+#   - Supports interactive menu: install, update, or remove
 #
 # Usage:
 #   # Interactive mode (prompts for action and settings)
@@ -161,7 +161,7 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
     echo "=== Removal Complete ==="
     echo "The kiosk service has been stopped and disabled."
     echo "Systemd service, start scripts, and X session configs have been removed."
-    echo "The system will boot to multi-user.target (no automatic GUI login)."
+    echo "The system will boot to multi-user.target (standard CLI boot)."
     echo ""
     echo "To keep Chromium installed, do nothing."
     echo "To remove Chromium and Xorg packages:"
@@ -401,9 +401,9 @@ exec /root/kiosk-start.sh
 XSESSION_EOF
 chmod +x /root/.xsession
 
-# --- Step 4: Configure graphical boot target ---
-echo "=== Step 4: Configuring boot to graphical target ==="
-systemctl set-default graphical.target 2>/dev/null || true
+# --- Step 4: Configure boot target ---
+echo "=== Step 4: Configuring boot target ==="
+systemctl set-default multi-user.target 2>/dev/null || true
 
 # --- Step 5: Create systemd service ---
 echo "=== Step 5: Creating systemd service ==="
@@ -413,22 +413,22 @@ SYSTEMD_SERVICE="/etc/systemd/system/kiosk.service"
 cat > "$SYSTEMD_SERVICE" << 'SYSTEMD_EOF'
 [Unit]
 Description=Kiosk Mode
-After=graphical-session.target
-Wants=graphical-session.target
+After=network.target
 
 [Service]
-Type=simple
+Type=forking
 User=root
 Group=root
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/root/.Xauthority
-ExecStart=/root/kiosk-start.sh
+ExecStart=/usr/local/bin/start-kiosk-x
 Restart=always
 RestartSec=3
 StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target
 SYSTEMD_EOF
 
 chmod 644 "$SYSTEMD_SERVICE"
@@ -437,21 +437,8 @@ systemctl enable kiosk.service 2>/dev/null || true
 
 echo "Systemd service: $SYSTEMD_SERVICE"
 
-# --- Step 6: Configure auto-login for getty ---
-echo "=== Step 6: Configuring auto-login ==="
-
-GETTY_DIR="/etc/systemd/system/getty@tty1.service.d"
-mkdir -p "$GETTY_DIR"
-
-cat > "$GETTY_DIR/override.conf" << 'GETTY_EOF'
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
-Type=idle
-GETTY_EOF
-
-# --- Step 7: Create wrapper to launch X + kiosk ---
-echo "=== Step 7: Configuring session launch ==="
+# --- Step 6: Create wrapper to launch X + kiosk ---
+echo "=== Step 6: Configuring session launch ==="
 
 cat > /usr/local/bin/start-kiosk-x << 'STARTX_EOF'
 #!/bin/bash
