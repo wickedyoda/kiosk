@@ -68,7 +68,7 @@ CALENDAR_INVERT = os.environ.get("CALENDAR_INVERT", "true").lower() in ("true", 
 WEATHER_ZIP_CODE = os.environ.get("WEATHER_ZIP_CODE", "")
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
 WEATHER_UNITS = os.environ.get("WEATHER_UNITS", "imperial")
-WEATHER_REFRESH_MINUTES = int(os.environ.get("WEATHER_REFRESH_MINUTES", "60"))
+WEATHER_REFRESH_MINUTES = max(int(os.environ.get("WEATHER_REFRESH_MINUTES", "240")), 120)  # default 4h, min 2h
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
@@ -332,7 +332,7 @@ async def fetch_immich_photos() -> list[str]:
 
 _WEATHER_CACHE: dict | None = None
 _WEATHER_CACHE_TIME: float = 0
-_WEATHER_CACHE_TTL = 60  # seconds
+_WEATHER_CACHE_TTL = 240 * 60  # 4 hours (OpenWeatherMap free tier rate limit: min 2h between calls per IP)
 
 async def fetch_weather() -> dict | None:
     """Fetch current weather from OpenWeatherMap API.
