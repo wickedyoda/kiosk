@@ -3,20 +3,24 @@
 # Kiosk Client Setup & Reconfiguration Script
 #
 # Sets up a Debian or Ubuntu headless host as a kiosk client, OR
-# reconfigures an existing kiosk client with new settings.
+# reconfigures/removes an existing kiosk setup.
 #
 # Features:
-#   - Detects Debian or Ubuntu and installs minimal Xorg + Chromium
-#   - Configures a systemd service for kiosk mode
+#   - Detects Debian/Ubuntu and installs minimal Xorg + Chromium
+#   - Creates/updates /etc/systemd/system/kiosk.service for kiosk mode
 #   - Creates/updates /root/kiosk-start.sh with kiosk URL and settings
 #   - Configures boot to graphical.target
 #   - Idempotent: safe to re-run for reconfiguration
+#   - Supports "remove" mode to cleanly uninstall kiosk and restore desktop
 #
 # Usage:
 #   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server>:8080 sudo bash
+#   # Or with remove mode:
+#   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_ACTION=remove sudo bash
 #
 # Or (if already cloned):
 #   sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
+#   sudo ./kiosk-client-setup.sh KIOSK_ACTION=remove
 #
 # Prerequisites:
 #   - Debian 12+ or Ubuntu 22.04+ (headless, no GUI)
@@ -30,6 +34,7 @@
 set -euo pipefail
 
 # --- Configuration from environment / arguments ---
+KIOSK_ACTION="${KIOSK_ACTION:-setup}"  # "setup" or "remove"
 KIOSK_URL="${KIOSK_URL:-}"
 KIOSK_SCALE="${KIOSK_SCALE:-1.0}"
 KIOSK_INVERT="${KIOSK_INVERT:-false}"
@@ -44,8 +49,88 @@ for arg in "$@"; do
         KIOSK_INVERT=*)              KIOSK_INVERT="${arg#KIOSK_INVERT=}" ;;
         KIOSK_USER=*)                KIOSK_USER="${arg#KIOSK_USER=}" ;;
         KIOSK_SLIDESHOW_INTERVAL=*)  KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}" ;;
+        KIOSK_ACTION=*)              KIOSK_ACTION="${arg#KIOSK_ACTION=}" ;;
+        remove)                      KIOSK_ACTION="remove" ;;
+        setup)                       KIOSK_ACTION="setup" ;;
     esac
 done
+
+# --- Remove mode ---
+if [ "$KIOSK_ACTION" = "remove" ]; then
+    echo "=== Kiosk Client Removal ==="
+    echo ""
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    # --- Detect OS ---
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "Detected OS: $NAME ($VERSION)"
+    fi
+    echo ""
+
+    echo "Removing kiosk configuration..."
+
+    # Stop and disable the kiosk service
+    systemctl stop kiosk.service 2>/dev/null || true
+    systemctl disable kiosk.service 2>/dev/null || true
+
+    # Remove systemd service file
+    if [ -f /etc/systemd/system/kiosk.service ]; then
+        rm -f /etc/systemd/system/kiosk.service
+        echo "  Removed: /etc/systemd/system/kiosk.service"
+    fi
+
+    systemctl daemon-reload 2>/dev/null || true
+
+    # Remove kiosk start script
+    if [ -f /root/kiosk-start.sh ]; then
+        rm -f /root/kiosk-start.sh
+        echo "  Removed: /root/kiosk-start.sh"
+    fi
+
+    # Remove X session files
+    if [ -f /root/.xinitrc ]; then
+        rm -f /root/.xinitrc
+        echo "  Removed: /root/.xinitrc"
+    fi
+    if [ -f /root/.xsession ]; then
+        rm -f /root/.xsession
+        echo "  Removed: /root/.xsession"
+    fi
+
+    # Remove the start-kiosk-x wrapper
+    if [ -f /usr/local/bin/start-kiosk-x ]; then
+        rm -f /usr/local/bin/start-kiosk-x
+        echo "  Removed: /usr/local/bin/start-kiosk-x"
+    fi
+
+    # Remove getty auto-login override
+    if [ -f /etc/systemd/system/getty@tty1.service.d/override.conf ]; then
+        rm -f /etc/systemd/system/getty@tty1.service.d/override.conf
+        rmdir /etc/systemd/system/getty@tty1.service.d/ 2>/dev/null || true
+        echo "  Removed: getty auto-login override"
+    fi
+
+    # Restore default boot target to multi-user (standard for servers/desktops)
+    systemctl set-default multi-user.target 2>/dev/null || true
+
+    echo ""
+    echo "=== Removal Complete ==="
+    echo "The kiosk service has been stopped and disabled."
+    echo "Systemd service, start scripts, and X session configs have been removed."
+    echo "The system will boot to multi-user.target (no automatic GUI login)."
+    echo ""
+    echo "To keep Chromium installed, do nothing."
+    echo "To remove Chromium and Xorg packages:"
+    echo "  apt-get purge -y chromium xorg xinit x11-xserver-utils unclutter unclutter-xfixes"
+    echo "  apt-get autoremove -y"
+    echo ""
+    echo "Reboot to apply: sudo reboot"
+    exit 0
+fi
+
+# --- Setup mode ---
 
 if [ -z "$KIOSK_URL" ]; then
     echo "Usage: KIOSK_URL=http://<server>:<port> sudo bash kiosk-client-setup.sh"
@@ -58,6 +143,9 @@ if [ -z "$KIOSK_URL" ]; then
     echo "  KIOSK_INVERT=true            — Invert calendar colors (default: false)"
     echo "  KIOSK_USER=root              — User to run kiosk as (default: root)"
     echo "  KIOSK_SLIDESHOW_INTERVAL=5   — Photo shuffle interval in minutes (default: 15)"
+    echo ""
+    echo "Other actions:"
+    echo "  KIOSK_ACTION=remove            — Remove kiosk and restore standard desktop"
     exit 1
 fi
 
@@ -102,19 +190,26 @@ fi
 if [ "$SUPPORTED" -eq 0 ]; then
     echo "ERROR: Unsupported OS. This script requires Debian or Ubuntu."
     echo "Detected: OS=$OS_NAME VERSION=$OS_VERSION LIKES=$OS_LIKE"
+    echo ""
+    echo "Supported: Debian 12+, Ubuntu 22.04+"
     exit 1
 fi
+
+echo "OS supported: $NAME $VERSION"
+echo ""
 
 # --- Step 1: Install Xorg and Chromium ---
 echo "=== Step 1: Installing Xorg + Chromium ==="
 
 apt-get update -qq
 
-# Determine package list — Ubuntu and Debian 12+ use the same package names
+# Determine package list
 PACKAGES_XORG="xorg xserver-xorg-video-fbdev xinit x11-xserver-utils"
+# Use unclutter-xfixes on Debian 12+ / Ubuntu 22.04+, unclutter as fallback
 PACKAGES_UNCLUTTER="unclutter"
-# unclutter-xfixes is better for Debian 12+, but unclutter works everywhere
 if [ "$OS_NAME" = "debian" ] && [ -n "$OS_VERSION" ] && [ "$(echo "$OS_VERSION" | cut -d. -f1)" -ge 12 ]; then
+    PACKAGES_UNCLUTTER="unclutter-xfixes"
+elif [ "$OS_NAME" = "ubuntu" ] && [ -n "$OS_VERSION" ] && [ "$(echo "$OS_VERSION" | cut -d. -f1)" -ge 22 ]; then
     PACKAGES_UNCLUTTER="unclutter-xfixes"
 fi
 
@@ -301,4 +396,8 @@ echo ""
 echo "To start now: sudo systemctl start kiosk.service"
 echo "Or reboot: sudo reboot"
 echo ""
-echo "To reconfigure later, just re-run this script with new KIOSK_URL."
+echo "To reconfigure later with a different URL:"
+echo "  KIOSK_URL=http://<new-server>:<port> sudo bash kiosk-client-setup.sh"
+echo ""
+echo "To remove kiosk and restore desktop:"
+echo "  KIOSK_ACTION=remove sudo bash kiosk-client-setup.sh"
