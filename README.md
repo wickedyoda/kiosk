@@ -396,11 +396,16 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 - The embed URL starts with `https://calendar.google.com/calendar/embed?src=...`
 
 ### Kiosk not starting on client
-- Ensure the host booted to graphical target: `systemctl get-default` should return `graphical.target`
+- Ensure the host is booted to `multi-user.target`: `systemctl get-default` should return `multi-user.target`
 - Check Xorg is running: `ps aux | grep Xorg`
 - Check Chromium is installed: `chromium --version`
-- Run the start script manually: `/root/kiosk-start.sh`
+- Run the start script manually: `/usr/local/bin/start-kiosk-x`
 - Check the kiosk log: `journalctl -u kiosk.service -n 50`
+
+### Black screen
+- Ensure the display is connected and powered on before boot
+- Check `/root/kiosk-start.sh` for correct URL
+- Verify the kiosk server is reachable from the client: `curl -s http://<server>:8080/health`
 
 ### Checking logs
 Logs are written to `/app/logs/kiosk.log` inside the container (mapped to a Docker volume). To view:
