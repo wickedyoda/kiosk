@@ -1,10 +1,13 @@
 services:
-  kiosk:
+  app:
     build: .
     ports:
       - "${WEB_PORT:-8080}:8080"
     env_file:
       - .env
     volumes:
-      - "${DATA_PATH:-/root/docker/kiosk/data}:/app/data"
+      - kiosk-data:/app/data
     restart: unless-stopped
+
+volumes:
+  kiosk-data:

@@ -97,6 +97,37 @@
   <div id="debug-info">Refreshing in {{ (page_refresh_ms // 1000) // 60 }} min</div>
 
   <script>
+    // --- Calendar date range: only show events up to 2 weeks in the future ---
+    const CALENDAR_BASE_URL = "{{ google_calendar_url }}";
+    const CALENDAR_WEEKS_AHEAD = 2;
+
+    function buildCalendarUrl(weeksAhead) {
+      const now = new Date();
+      const startDate = now.toISOString().slice(0, 10).replace(/-/g, "");
+      const endDate = new Date(now);
+      endDate.setDate(endDate.getDate() + (weeksAhead * 7));
+      const endDateStr = endDate.toISOString().slice(0, 10).replace(/-/g, "");
+
+      // Remove any existing dates param, then append the new one
+      const baseUrl = CALENDAR_BASE_URL.replace(/[?&]dates=[^&]*/g, "");
+      const separator = baseUrl.includes("?") ? "&" : "?";
+      return baseUrl + separator + "dates=" + startDate + "/" + endDateStr;
+    }
+
+    // --- Calendar auto-refresh ---
+    const calendarRefreshSeconds = {{ calendar_refresh_seconds }};
+    const calendarFrame = document.getElementById('calendar-frame');
+
+    function refreshCalendar() {
+      calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
+    }
+
+    // Set the initial calendar URL with date range
+    calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
+
+    // Refresh calendar periodically (rebuild URL with fresh date range)
+    setInterval(refreshCalendar, calendarRefreshSeconds * 1000);
+
     // --- Slideshow logic ---
     const slides = document.querySelectorAll('#slideshow-container img');
     let slideIndex = 0;
@@ -119,20 +150,6 @@
       showSlide(slideIndex);
       setInterval(nextSlide, slideIntervalMs);
     }
-
-    // --- Calendar auto-refresh ---
-    const calendarRefreshSeconds = {{ calendar_refresh_seconds }};
-    const calendarFrame = document.getElementById('calendar-frame');
-
-    function refreshCalendar() {
-      const src = calendarFrame.src;
-      calendarFrame.src = 'about:blank';
-      setTimeout(() => {
-        calendarFrame.src = src.split('?')[0] + (src.includes('?') ? '?' : '?') + '_t=' + Date.now();
-      }, 100);
-    }
-
-    setInterval(refreshCalendar, calendarRefreshSeconds * 1000);
   </script>
 </body>
 </html>
