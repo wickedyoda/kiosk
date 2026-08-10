@@ -347,7 +347,7 @@ echo "=== Step 2: Creating kiosk start script ==="
 KIOSK_SCRIPT="/root/kiosk-start.sh"
 
 # Build Chromium flags based on invert preference
-CHROMIUM_FLAGS="--noerrdialogs --disable-infobars --no-first-run --no-default-browser-check --disable-session-crashed-bubble --kiosk --force-device-scale-factor=$KIOSK_SCALE --disable-features=Translate --disable-web-security --allow-running-insecure-content"
+CHROMIUM_FLAGS="--noerrdialogs --disable-infobars --no-first-run --no-default-browser-check --disable-session-crashed-bubble --kiosk --force-device-scale-factor=$KIOSK_SCALE --disable-features=Translate --disable-web-security --allow-running-insecure-content --no-sandbox --user-data-dir=/root/.config/kioskuim"
 
 if [ "$KIOSK_INVERT" = "true" ]; then
     CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-features=WebUIDarkMode --force-dark-mode"
@@ -390,7 +390,8 @@ $CHROMIUM_BIN \\
   --disable-features=Translate \\
   --disable-web-security \\
   --allow-running-insecure-content \\
-  --disable-gpu-compositing \\
+  --no-sandbox \\
+  --user-data-dir=/root/.config/kioskuim \\
   "$KIOSK_URL"
 KIOSK_EOF
 
