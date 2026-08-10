@@ -91,7 +91,7 @@ nano .env
 docker compose up -d --build
 
 # 3. On a client machine, run the kiosk setup
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server-ip>:8080 sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 bash
 sudo reboot
 ```
 
@@ -195,7 +195,7 @@ Then point your client's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
 Run the setup script on your Debian 12/13 headless client:
 
 ```bash
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<your-server-ip>:8080 sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<your-server-ip>:8080 bash
 ```
 
 Then reboot:
@@ -233,7 +233,7 @@ cp .env.example .env
 docker compose up -d --build
 
 # Then run the kiosk client setup pointing to localhost
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://localhost:8080 sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://localhost:8080 bash
 sudo reboot
 ```
 
@@ -250,7 +250,7 @@ cp .env.example .env
 docker compose up -d --build
 
 # On each kiosk client
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server-ip>:8080 sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server-ip>:8080 bash
 sudo reboot
 ```
 
@@ -345,18 +345,15 @@ Installs Xorg, Chromium, and configures the kiosk:
 
 ```bash
 # Via URL (one-liner):
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
-  | KIOSK_URL=http://<server>:8080 sudo bash
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \\
+  | sudo KIOSK_URL=http://<server>:8080 bash
 
-# Or after cloning:
-sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
-
-# With optional settings:
-KIOSK_URL=http://<server>:8080 \
-KIOSK_SCALE=1.5 \
-KIOSK_INVERT=true \
-KIOSK_SLIDESHOW_INTERVAL=5 \
-sudo ./kiosk-client-setup.sh
+# Or with optional settings:
+sudo KIOSK_URL=http://<server>:8080 \\
+KIOSK_SCALE=1.5 \\
+KIOSK_INVERT=true \\
+KIOSK_SLIDESHOW_INTERVAL=5 \\
+bash kiosk-client-setup.sh
 ```
 
 ### Remove Mode
@@ -364,7 +361,7 @@ sudo ./kiosk-client-setup.sh
 Removes the kiosk and restores the system to a standard desktop state:
 
 ```bash
-KIOSK_ACTION=remove sudo ./kiosk-client-setup.sh
+sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh
 ```
 
 This will:
@@ -422,7 +419,7 @@ To change log verbosity, set `LOG_LEVEL` in `.env` to `DEBUG`, `INFO`, `WARNING`
 To change the kiosk URL or settings on an existing client, simply re-run the script with the new values:
 
 ```bash
-KIOSK_URL=http://<new-server>:<port> sudo ./kiosk-client-setup.sh
+sudo KIOSK_URL=http://<new-server>:<port> bash kiosk-client-setup.sh
 sudo reboot
 ```
 
