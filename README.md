@@ -1,16 +1,45 @@
 # Kiosk
 
-A Raspberry Pi kiosk application that displays a split-screen layout:
+A **Docker-hosted kiosk web application** that displays a split-screen layout:
 - **Left side**: Slideshow of photos from an Immich shared album
-- **Right side**: Embedded Google Calendar
+- **Right side**: Embedded Google Calendar (Schedule/AGENDA view)
 
 Photos rotate at a configurable interval, and the calendar refreshes automatically. The entire page reloads periodically to pick up new photos.
+
+The server runs in Docker (using `docker compose`) and can be hosted either **on the client machine itself** or on a **separate server** on the network. Clients run a lightweight Chromium kiosk browser pointing at the server URL.
+
+---
+
+## Table of Contents
+
+1. [Architecture](#architecture)
+2. [Prerequisites](#prerequisites)
+3. [Quick Start](#quick-start)
+4. [Detailed Setup](#detailed-setup)
+   - [Configure `.env`](#configure-env)
+   - [Start the Web Server](#start-the-web-server)
+   - [Optional: Reverse Proxy (Nginx)](#optional-reverse-proxy-nginx)
+   - [Find Your Immich Shared Link Key](#find-your-immich-shared-link-key)
+   - [Set Up the Kiosk Client](#set-up-the-kiosk-client)
+   - [Make Your Google Calendar Public](#make-your-google-calendar-public)
+5. [Docker Deployment](#docker-deployment)
+   - [Hosting on the Client (Single-Machine)](#hosting-on-the-client-single-machine)
+   - [Hosting on a Separate Server](#hosting-on-a-separate-server)
+6. [`.env` Variables Reference](#env-variables-reference)
+7. [File Layout](#file-layout)
+8. [How It Works](#how-it-works)
+9. [Client Script Usage](#client-script-usage)
+10. [Troubleshooting](#troubleshooting)
+11. [Security Notes](#security-notes)
+12. [License](#license)
+
+---
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Raspberry Pi (Kiosk Client)                             │
+│  Kiosk Client (Debian/Ubuntu, no GUI)                   │
 │  Chromium in kiosk mode → http://<server>:8080           │
 │  ┌─────────────────┬─────────────────┐                  │
 │  │  Photo Slideshow│  Google Calendar │                  │
@@ -19,16 +48,58 @@ Photos rotate at a configurable interval, and the calendar refreshes automatical
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│  Docker Host (Web Server)                                  │
-│  - FastAPI app fetches photos via Immich shared link API  │
-│  - Serves the kiosk HTML page                             │
-│  - Calendar embedded directly via Google Calendar embed   │
+│  Docker Host (Web Server)                                │
+│  - FastAPI app fetches photos via Immich shared link API │
+│  - Serves the kiosk HTML page                            │
+│  - Calendar embedded directly via Google Calendar embed  │
+│  - Local thumbnail caching with LRU eviction             │
+│  - Runs as: docker compose up -d                         │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Setup
+### Hosting Options
 
-### 1. Configure the `.env` file
+| Option | Where the Docker server runs | Where the kiosk browser runs |
+|--------|------------------------------|------------------------------|
+| **Client-hosted** | On the same Debian/Ubuntu machine as the kiosk display | Same machine |
+| **Server-hosted** | On a dedicated server (e.g. your Proxmox box, NAS, docker1) | Separate thin client or kiosk machine |
+
+---
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+1. **Immich instance** with a public/shared album
+2. **Google Calendar** that can be set to public
+3. For the **kiosk client**: a Debian 12/13 or Ubuntu 22.04+ machine with no GUI installed
+4. For the **Docker host**: Docker and Docker Compose installed
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone and configure
+git clone https://github.com/wickedyoda/kiosk.git
+cd kiosk
+cp .env.example .env
+# Edit .env with your Immich key and Google Calendar URL
+nano .env
+
+# 2. Start the server
+docker compose up -d --build
+
+# 3. On a client machine, run the kiosk setup
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server-ip>:8080 sudo bash
+sudo reboot
+```
+
+---
+
+## Detailed Setup
+
+### Configure `.env`
 
 Copy the example and fill in your details:
 
@@ -47,19 +118,21 @@ PAGE_REFRESH_INTERVAL_MINUTES=30             # Full page reload interval
 CALENDAR_REFRESH_INTERVAL_MINUTES=30         # Calendar iframe reload interval
 WEB_PORT=8080                                 # Port the web server listens on
 IMMICH_THUMB_SIZE=large                       # Thumbnail size from Immich
+CALENDAR_SCALE=2.0                            # Scale calendar text (1.0 = normal, 2.0 = 2x)
+CALENDAR_INVERT=true                         # Invert calendar colors for kiosk display
 ```
 
-### 2. Start the web server
+### Start the Web Server
 
 The data and logs are persisted using Docker named volumes (no manual directory creation needed):
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 The kiosk will be available at `http://<your-server-ip>:8080`.
 
-### Optional: Run behind a reverse proxy (Nginx)
+### Optional: Reverse Proxy (Nginx)
 
 If you want to serve the kiosk over HTTPS or via a custom domain, set up Nginx as a reverse proxy.
 
@@ -105,9 +178,9 @@ sudo systemctl reload nginx
 docker compose up -d --build
 ```
 
-Then point your Pi's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
+Then point your client's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
 
-### 3. Find your Immich shared link key
+### Find Your Immich Shared Link Key
 
 1. In Immich, open the album you want to display
 2. Click the **Share** icon → **Create a link**
@@ -117,7 +190,7 @@ Then point your Pi's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
    ```
 4. The key is everything after `/share/` — paste it in `.env` as `IMMICH_SHARED_LINK_KEY`
 
-### 4. Set up the kiosk client
+### Set Up the Kiosk Client
 
 Run the setup script on your Debian 12/13 headless client:
 
@@ -131,12 +204,57 @@ Then reboot:
 sudo reboot
 ```
 
-### 5. Make your Google Calendar public
+### Make Your Google Calendar Public
 
 1. Go to [Google Calendar](https://calendar.google.com)
 2. In the left panel, find your calendar → click the **three dots** → **Settings and sharing**
 3. Under **Access permissions**, check **Make available to public**
 4. Under **Integrate calendar**, copy the **Embed code** URL and paste it into `GOOGLE_CALENDAR_URL` in `.env`
+
+---
+
+## Docker Deployment
+
+### Hosting on the Client (Single-Machine)
+
+Install Docker and Docker Compose on the same machine that will serve as the kiosk display:
+
+```bash
+# On the client machine
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose
+sudo usermod -aG docker $USER
+
+# Clone repo
+git clone https://github.com/wickedyoda/kiosk.git
+cd kiosk
+cp .env.example .env
+# ...configure .env...
+docker compose up -d --build
+
+# Then run the kiosk client setup pointing to localhost
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://localhost:8080 sudo bash
+sudo reboot
+```
+
+### Hosting on a Separate Server
+
+Deploy on a dedicated Docker host and point kiosk clients at it:
+
+```bash
+# On the server (e.g. docker1.tail99133.ts.net)
+git clone https://github.com/wickedyoda/kiosk.git
+cd kiosk
+cp .env.example .env
+# ...configure .env...
+docker compose up -d --build
+
+# On each kiosk client
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<server-ip>:8080 sudo bash
+sudo reboot
+```
+
+---
 
 ## `.env` Variables Reference
 
@@ -149,37 +267,45 @@ sudo reboot
 | `SLIDESHOW_INTERVAL_MINUTES` | How often photos change | `15` |
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
+| `CALENDAR_SCALE` | Scale factor for calendar content (e.g. 1.5, 2.0) | `2.0` |
+| `CALENDAR_INVERT` | Invert calendar colors for kiosk display | `true` |
 | `WEB_PORT` | Port for the web server | `8080` |
 | `WEB_HOST` | Bind address for the web server | `0.0.0.0` |
-| `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |
 | `BASE_URL` | Public-facing URL when behind reverse proxy | _(empty)_ |
-| `DATA_PATH` | Data directory inside container (mapped to host via docker-compose) | `/app/data` |
+| `DATA_PATH` | Data directory inside container | `/app/data` |
 | `CACHE_MAX_SIZE_MB` | Max local thumbnail cache size | `1024` |
 | `CACHE_MAX_AGE_SECONDS` | Cache entry TTL before eviction | `86400` (24h) |
 | `LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `DEBUG` |
-| `LOG_DIR` | Directory for log files (mapped to host via docker-compose) | `/app/logs` |
+| `LOG_DIR` | Directory for log files | `/app/logs` |
 
-## Files
+---
+
+## File Layout
 
 ```
-.
 ├── .env                 # Environment configuration (not in git)
 ├── .env.example         # Example environment file
+├── .gitignore
+├── .dockerignore
 ├── main.py              # FastAPI web server
-├── Dockerfile           # Docker image for dev
-├── Dockerfile.prod      # Docker image for production
+├── Dockerfile           # Docker image (dev)
+├── Dockerfile.prod      # Docker image (production)
 ├── docker-compose.yml   # Docker Compose configuration
 ├── requirements.txt     # Python dependencies
+├── Makefile             # Convenience targets (build, up, down, logs, restart)
 ├── templates/
 │   └── kiosk.html       # Kiosk page HTML template
-├── static/              # Static assets (placeholder.jpg, etc.)
-├── kiosk-client-setup.sh  # Debian/Ubuntu client setup script (headless)
+├── static/              # Static assets
+└── kiosk-client-setup.sh  # Debian/Ubuntu kiosk client setup script
 ```
 
-### How It Works
+---
+
+## How It Works
 
 ### Photo Slideshow (Left)
+
 1. On page load, the server calls `GET /api/shared-links/me?key={key}` to the Immich API
 2. This returns all assets in the shared link, including their IDs
 3. Thumbnails are **downloaded and cached locally** on the Docker host (max 1GB) — the browser never contacts Immich directly (avoids CORS issues)
@@ -192,11 +318,69 @@ sudo reboot
    - Entries for assets no longer in the album are deleted on each photo fetch
 
 ### Google Calendar (Right)
+
 - The calendar is embedded via an `<iframe>` in **Schedule (AGENDA) view**
 - Only events within a **2-week window** are displayed (via the `dates` URL parameter)
 - The date range is recalculated on each calendar refresh to keep the window current
 - It auto-refreshes every `CALENDAR_REFRESH_INTERVAL_MINUTES` by reloading the iframe with an updated URL
+- The "Add to Calendar" button is **disabled** (`showAdd=0`) — kiosk displays have no input devices
+- Calendar text can be scaled via `CALENDAR_SCALE` and colors can be inverted via `CALENDAR_INVERT`
 - No Google API authentication is needed — just a public calendar
+
+---
+
+## Client Script Usage
+
+The `kiosk-client-setup.sh` script can be used in two modes:
+
+### Setup Mode (default)
+
+Installs Xorg, Chromium, and configures the kiosk:
+
+```bash
+# Via URL (one-liner):
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
+  | KIOSK_URL=http://<server>:8080 sudo bash
+
+# Or after cloning:
+sudo ./kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
+
+# With optional settings:
+KIOSK_URL=http://<server>:8080 \
+KIOSK_SCALE=1.5 \
+KIOSK_INVERT=true \
+KIOSK_SLIDESHOW_INTERVAL=5 \
+sudo ./kiosk-client-setup.sh
+```
+
+### Remove Mode
+
+Removes the kiosk and restores the system to a standard desktop state:
+
+```bash
+KIOSK_ACTION=remove sudo ./kiosk-client-setup.sh
+```
+
+This will:
+- Stop and disable the `kiosk.service` systemd service
+- Remove `/etc/systemd/system/kiosk.service`
+- Remove `/root/kiosk-start.sh`, `/root/.xinitrc`, `/root/.xsession`
+- Remove the getty auto-login override
+- Restore `multi-user.target` as the default boot target
+- Optionally purge Chromium/Xorg packages (instructions printed at the end)
+
+### Environment Variables for the Script
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KIOSK_URL` | URL of the kiosk web server (required for setup) | _(none)_ |
+| `KIOSK_SCALE` | Chromium device scale factor | `1.0` |
+| `KIOSK_INVERT` | Invert calendar colors | `false` |
+| `KIOSK_SLIDESHOW_INTERVAL` | Photo shuffle interval in minutes | `15` |
+| `KIOSK_USER` | User to run the kiosk as | `root` |
+| `KIOSK_ACTION` | `setup` or `remove` | `setup` |
+
+---
 
 ## Troubleshooting
 
@@ -204,7 +388,7 @@ sudo reboot
 - Verify `IMMICH_SHARED_LINK_KEY` is correct (everything after `/share/` in the URL)
 - Check that the album is shared publicly in Immich
 - Verify `IMMICH_URL` is correct (no trailing slash)
-- Run `docker compose logs kiosk` to check server logs
+- Run `docker compose logs` to check server logs
 
 ### Calendar not showing
 - Verify the Google Calendar is set to **public**
@@ -212,28 +396,41 @@ sudo reboot
 - The embed URL starts with `https://calendar.google.com/calendar/embed?src=...`
 
 ### Kiosk not starting on client
-|- Ensure the host booted to graphical target: `systemctl get-default` should return `graphical.target`
-|- Check Xorg is running: `ps aux | grep Xorg`
-|- Check Chromium is installed: `chromium --version`
-|- Run the start script manually: `/root/kiosk-start.sh`
-|- Check the kiosk log: `journalctl -u kiosk.service -n 50`
+- Ensure the host booted to graphical target: `systemctl get-default` should return `graphical.target`
+- Check Xorg is running: `ps aux | grep Xorg`
+- Check Chromium is installed: `chromium --version`
+- Run the start script manually: `/root/kiosk-start.sh`
+- Check the kiosk log: `journalctl -u kiosk.service -n 50`
 
 ### Checking logs
 Logs are written to `/app/logs/kiosk.log` inside the container (mapped to a Docker volume). To view:
 
 ```bash
-docker compose logs -f     # Stream container logs (stdout)
-docker exec -it app-app-1 cat /app/logs/kiosk.log  # View file logs
+docker compose logs -f                          # Stream container logs (stdout)
+docker exec -it kiosk-app-1 cat /app/logs/kiosk.log  # View file logs
 ```
 
 To change log verbosity, set `LOG_LEVEL` in `.env` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`.
 
+### Reconfiguring a client
+To change the kiosk URL or settings on an existing client, simply re-run the script with the new values:
+
+```bash
+KIOSK_URL=http://<new-server>:<port> sudo ./kiosk-client-setup.sh
+sudo reboot
+```
+
+---
+
 ## Security Notes
 
-- The Immich shared link key is sent to the browser only for thumbnail image requests
-- The web server acts as a proxy only for the photo list API call (the key never touches the browser for that)
-- Consider restricting access to the kiosk server with a reverse proxy or firewall
+- The Immich shared link key is used by the server to fetch photos — it is **not** sent to the browser for API calls. Only thumbnail image requests use the key (proxied through `/photo/{id}`)
+- The web server acts as a proxy for the photo list API call — the browser never sees the Immich API key for listing
+- Consider restricting access to the kiosk server with a reverse proxy (HTTPS) or firewall
 - All communications should be over HTTPS in production
+- The kiosk client runs Chromium in `--no-web-security` mode — only deploy on trusted networks
+
+---
 
 ## License
 
