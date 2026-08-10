@@ -98,7 +98,7 @@
 
   <script>
     // --- Calendar date range: only show events up to 2 weeks in the future ---
-    const CALENDAR_BASE_URL = "{{ google_calendar_url }}";
+    const CALENDAR_BASE_URL = {{ google_calendar_url | tojson }};
     const CALENDAR_WEEKS_AHEAD = 2;
 
     function buildCalendarUrl(weeksAhead) {
