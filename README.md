@@ -117,9 +117,9 @@ Then point your Pi's `KIOSK_URL` to `https://kiosk.yourdomain.com`.
    ```
 4. The key is everything after `/share/` — paste it in `.env` as `IMMICH_SHARED_LINK_KEY`
 
-### 4. Set up the Raspberry Pi kiosk client
+### 4. Set up the kiosk client
 
-Run this on your Raspberry Pi (Raspberry Pi OS with desktop recommended):
+Run the setup script on your Debian 12/13 headless client:
 
 ```bash
 curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | KIOSK_URL=http://<your-server-ip>:8080 sudo bash
@@ -173,9 +173,7 @@ sudo reboot
 ├── templates/
 │   └── kiosk.html       # Kiosk page HTML template
 ├── static/              # Static assets (placeholder.jpg, etc.)
-├── kiosk-client-setup.sh # Raspberry Pi setup script
-├── kiosk-client-setup-debian.sh # Debian/Ubuntu client setup script
-└── README.md            # This file
+├── kiosk-client-setup.sh  # Debian/Ubuntu client setup script (headless)
 ```
 
 ### How It Works
@@ -212,19 +210,12 @@ sudo reboot
 - Check that `GOOGLE_CALENDAR_URL` is the correct embed URL (not the share URL)
 - The embed URL starts with `https://calendar.google.com/calendar/embed?src=...`
 
-### Kiosk not starting on Pi
-|- Ensure the Pi boots to desktop: `sudo raspi-config` → **Boot / Auto Login** → **Desktop Autologin**
-|- Check Chromium installed: `chromium-browser --version`
-|- Run the start script manually: `/home/pi/kiosk-start.sh`
-
-### Debian/Ubuntu client setup
-For Debian 12 or Ubuntu 22.04+ clients (not Raspberry Pi), use the Debian-specific setup script:
-
-```bash
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup-debian.sh | KIOSK_URL=http://<your-server-ip>:8080 sudo bash
-```
-
-This script auto-detects the desktop environment and configures auto-login accordingly.
+### Kiosk not starting on client
+|- Ensure the host booted to graphical target: `systemctl get-default` should return `graphical.target`
+|- Check Xorg is running: `ps aux | grep Xorg`
+|- Check Chromium is installed: `chromium --version`
+|- Run the start script manually: `/root/kiosk-start.sh`
+|- Check the kiosk log: `journalctl -u kiosk.service -n 50`
 
 ### Checking logs
 Logs are written to `/app/logs/kiosk.log` inside the container (mapped to a Docker volume). To view:
