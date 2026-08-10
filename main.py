@@ -64,6 +64,11 @@ GOOGLE_CALENDAR_URL = os.environ.get(
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
 CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "2"))
 CALENDAR_INVERT = os.environ.get("CALENDAR_INVERT", "true").lower() in ("true", "1", "yes")
+# Weather overlay settings
+WEATHER_ZIP_CODE = os.environ.get("WEATHER_ZIP_CODE", "")
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
+WEATHER_UNITS = os.environ.get("WEATHER_UNITS", "imperial")
+WEATHER_REFRESH_MINUTES = int(os.environ.get("WEATHER_REFRESH_MINUTES", "60"))
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
@@ -321,6 +326,62 @@ async def fetch_immich_photos() -> list[str]:
         return _cached_photos
 
 
+# ---------------------------------------------------------------------------
+# Weather API
+# ---------------------------------------------------------------------------
+
+_WEATHER_CACHE: dict | None = None
+_WEATHER_CACHE_TIME: float = 0
+_WEATHER_CACHE_TTL = 60  # seconds
+
+async def fetch_weather() -> dict | None:
+    """Fetch current weather from OpenWeatherMap API.
+
+    Returns dict with: description, temp, humidity, icon, city
+    Returns None if not configured or on error.
+    """
+    global _WEATHER_CACHE, _WEATHER_CACHE_TIME
+
+    if not WEATHER_ZIP_CODE or not WEATHER_API_KEY:
+        return None
+
+    now = time.time()
+    if _WEATHER_CACHE is not None and (now - _WEATHER_CACHE_TIME) < _WEATHER_CACHE_TTL:
+        return _WEATHER_CACHE
+
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "zip": f"{WEATHER_ZIP_CODE},US",
+        "appid": WEATHER_API_KEY,
+        "units": WEATHER_UNITS,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                data = resp.json()
+                # Convert wind speed: m/s to mph if imperial
+                wind_mph = data.get("wind", {}).get("speed", 0)
+                _WEATHER_CACHE = {
+                    "description": data.get("weather", [{}])[0].get("description", "").title(),
+                    "temp": round(data.get("main", {}).get("temp", 0)),
+                    "humidity": data.get("main", {}).get("humidity", 0),
+                    "icon": data.get("weather", [{}])[0].get("icon", "01d"),
+                    "city": data.get("name", ""),
+                    "wind": int(wind_mph),
+                }
+                _WEATHER_CACHE_TIME = now
+                logger.debug("Weather fetched: %s, %s°", _WEATHER_CACHE["description"], _WEATHER_CACHE["temp"])
+                return _WEATHER_CACHE
+            else:
+                logger.warning("Weather API error: HTTP %s — %s", resp.status_code, resp.text[:200])
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
+        logger.error("Weather API error: %s", e)
+
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: pre-fetch photos so the first request is fast."""
@@ -369,6 +430,7 @@ async def kiosk_page(request: Request):
     calendar_refresh_seconds = CALENDAR_REFRESH_INTERVAL_MINUTES * 60
 
     template = env.get_template("kiosk.html")
+    weather = await fetch_weather()
     html = template.render(
         photos=photos,
         slideshow_interval_ms=slideshow_interval_ms,
@@ -377,6 +439,9 @@ async def kiosk_page(request: Request):
         google_calendar_url=GOOGLE_CALENDAR_URL,
         calendar_scale=CALENDAR_SCALE,
         calendar_invert=CALENDAR_INVERT,
+        weather=weather,
+        weather_enabled=bool(WEATHER_ZIP_CODE and WEATHER_API_KEY),
+        weather_units=WEATHER_UNITS,
     )
     return html
 
