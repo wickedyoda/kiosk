@@ -14,49 +14,84 @@
 #   - Supports "remove" mode to cleanly uninstall kiosk and restore desktop
 #
 # Usage:
+#   # Interactive mode (prompts for action and settings)
+#   curl -s https://raw.githubusercontent.com/wickedyoka/kiosk/main/kiosk-client-setup.sh | sudo bash
+#
+#   # Non-interactive (pass env vars)
 #   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://<server>:8080 bash
-#   # Or with remove mode:
 #   curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_ACTION=remove bash
 #
 # Or (if already cloned):
-#   sudo KIOSK_URL=http://<server>:8080 bash kiosk-client-setup.sh
+#   sudo bash kiosk-client-setup.sh
+#   sudo bash kiosk-client-setup.sh KIOSK_URL=http://<server>:8080
 #   sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh
-#
-# Note: sudo strips unknown env vars by default. Use the form above
-# (sudo VAR=value bash) to ensure KIOSK_URL is passed through.
 #
 # Prerequisites:
 #   - Debian 12+ or Ubuntu 22.04+ (headless, no GUI)
 #   - Network access to the kiosk web server
 #
-# Exit codes:
-#   0 — Success
-#   1 — Invalid arguments or OS not supported
-#   2 — Package installation failed
-#
 set -euo pipefail
 
-# --- Configuration from environment / arguments ---
-KIOSK_ACTION="${KIOSK_ACTION:-setup}"  # "setup" or "remove"
-KIOSK_URL="${KIOSK_URL:-}"
-KIOSK_SCALE="${KIOSK_SCALE:-1.0}"
-KIOSK_INVERT="${KIOSK_INVERT:-false}"
-KIOSK_USER="${KIOSK_USER:-root}"
-KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL:-15}"
+# --- Default configuration ---
+KIOSK_URL=""
+KIOSK_SCALE="1.0"
+KIOSK_INVERT="false"
+KIOSK_USER="root"
+KIOSK_SLIDESHOW_INTERVAL="15"
+KIOSK_ACTION=""
+WEATHER_ZIP_CODE=""
+WEATHER_API_KEY=""
 
-# Parse positional arguments like KIOSK_URL=<value>
+# --- Parse env vars (from sudo VAR=value bash form) ---
+if [ -n "${KIOSK_URL:-}" ]; then KIOSK_URL="${KIOSK_URL}"; fi
+if [ -n "${KIOSK_SCALE:-}" ]; then KIOSK_SCALE="${KIOSK_SCALE}"; fi
+if [ -n "${KIOSK_INVERT:-}" ]; then KIOSK_INVERT="${KIOSK_INVERT}"; fi
+if [ -n "${KIOSK_USER:-}" ]; then KIOSK_USER="${KIOSK_USER}"; fi
+if [ -n "${KIOSK_SLIDESHOW_INTERVAL:-}" ]; then KIOSK_SLIDESHOW_INTERVAL="${KIOSK_SLIDESHOW_INTERVAL}"; fi
+if [ -n "${KIOSK_ACTION:-}" ]; then KIOSK_ACTION="${KIOSK_ACTION}"; fi
+
+# Parse positional arguments
 for arg in "$@"; do
     case "$arg" in
-        KIOSK_URL=*)                 KIOSK_URL="${arg#KIOSK_URL=}" ;;
-        KIOSK_SCALE=*)               KIOSK_SCALE="${arg#KIOSK_SCALE=}" ;;
-        KIOSK_INVERT=*)              KIOSK_INVERT="${arg#KIOSK_INVERT=}" ;;
-        KIOSK_USER=*)                KIOSK_USER="${arg#KIOSK_USER=}" ;;
-        KIOSK_SLIDESHOW_INTERVAL=*)  KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}" ;;
-        KIOSK_ACTION=*)              KIOSK_ACTION="${arg#KIOSK_ACTION=}" ;;
-        remove)                      KIOSK_ACTION="remove" ;;
-        setup)                       KIOSK_ACTION="setup" ;;
+        KIOSK_URL=*)                 KIOSK_URL="${arg#KIOSK_URL=}";;
+        KIOSK_SCALE=*)               KIOSK_SCALE="${arg#KIOSK_SCALE=}";;
+        KIOSK_INVERT=*)              KIOSK_INVERT="${arg#KIOSK_INVERT=}";;
+        KIOSK_USER=*)                KIOSK_USER="${arg#KIOSK_USER=}";;
+        KIOSK_SLIDESHOW_INTERVAL=*)  KIOSK_SLIDESHOW_INTERVAL="${arg#KIOSK_SLIDESHOW_INTERVAL=}";;
+        KIOSK_ACTION=*)              KIOSK_ACTION="${arg#KIOSK_ACTION=}";;
+        WEATHER_ZIP_CODE=*)          WEATHER_ZIP_CODE="${arg#WEATHER_ZIP_CODE=}";;
+        WEATHER_API_KEY=*)           WEATHER_API_KEY="${arg#WEATHER_API_KEY=}";;
+        remove|uninstall)            KIOSK_ACTION="remove";;
+        setup|install|update)        KIOSK_ACTION="setup";;
+        *) echo "Unknown argument: $arg";;
     esac
 done
+
+# --- Check if kiosk is already installed ---
+KIOSK_INSTALLED=0
+if [ -f /etc/systemd/system/kiosk.service ]; then
+    KIOSK_INSTALLED=1
+fi
+
+# --- Interactive prompt if no action specified ---
+if [ -z "$KIOSK_ACTION" ]; then
+    echo "=== Kiosk Client Management ==="
+    echo ""
+    echo "What would you like to do?"
+    echo ""
+    echo "  1) Install a new kiosk (or reconfigure existing)"
+    echo "  2) Update existing kiosk settings"
+    echo "  3) Uninstall and remove the kiosk"
+    echo ""
+    read -rp "Select an option (1/2/3): " choice
+    echo ""
+    case "$choice" in
+        1) KIOSK_ACTION="setup";;
+        2) KIOSK_ACTION="setup";;  # Reconfigure = setup with existing env
+        3) KIOSK_ACTION="remove";;
+        *) echo "ERROR: Invalid option '$choice'"; exit 1;;
+    esac
+fi
 
 # --- Remove mode ---
 if [ "$KIOSK_ACTION" = "remove" ]; then
@@ -65,7 +100,6 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
 
     export DEBIAN_FRONTEND=noninteractive
 
-    # --- Detect OS ---
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         echo "Detected OS: $NAME ($VERSION)"
@@ -115,7 +149,7 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
         echo "  Removed: getty auto-login override"
     fi
 
-    # Restore default boot target to multi-user (standard for servers/desktops)
+    # Restore default boot target to multi-user
     systemctl set-default multi-user.target 2>/dev/null || true
 
     echo ""
@@ -134,39 +168,47 @@ if [ "$KIOSK_ACTION" = "remove" ]; then
 fi
 
 # --- Setup mode ---
+# If updating an existing kiosk, load current settings
+if [ "$KIOSK_ACTION" = "setup" ] && [ "$KIOSK_INSTALLED" -eq 1 ]; then
+    echo "=== Reconfiguring existing kiosk ==="
+    # Try to read current KIOSK_URL from the start script
+    if [ -f /root/kiosk-start.sh ]; then
+        CURRENT_URL=$(grep 'Kiosk URL:' /root/kiosk-start.sh 2>/dev/null | head -1 | sed 's/.*URL: //' || true)
+        if [ -n "$CURRENT_URL" ] && [ -z "$KIOSK_URL" ]; then
+            echo "Current kiosk URL: $CURRENT_URL"
+        fi
+    fi
+    echo ""
+fi
 
+# Prompt for KIOSK_URL if not set
 if [ -z "$KIOSK_URL" ]; then
-    echo "Usage: sudo KIOSK_URL=http://<server>:<port> bash kiosk-client-setup.sh"
     echo ""
-    echo "Example:"
-    echo "  curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo KIOSK_URL=http://docker1.tail99133.ts.net:8080 bash"
+    echo "Enter the kiosk server URL (e.g. http://docker1.tail99133.ts.net:8080):"
+    read -rp "KIOSK_URL: " KIOSK_URL
+    if [ -z "$KIOSK_URL" ]; then
+        echo "ERROR: KIOSK_URL is required."
+        exit 1
+    fi
+    KIOSK_URL=$(echo "$KIOSK_URL" | sed 's:/*$::')
     echo ""
-    echo "Optional env vars:"
-    echo "  KIOSK_SCALE=1.5              — Chromium device scale factor (default: 1.0)"
-    echo "  KIOSK_INVERT=true            — Invert calendar colors (default: false)"
-    echo "  KIOSK_USER=root              — User to run kiosk as (default: root)"
-    echo "  KIOSK_SLIDESHOW_INTERVAL=5   — Photo shuffle interval in minutes (default: 15)"
-    echo "  WEATHER_ZIP_CODE=71417       — US ZIP code for weather overlay"
-    echo ""
-    echo "Other actions:"
-    echo "  KIOSK_ACTION=remove            — Remove kiosk and restore standard desktop"
-    exit 1
 fi
 
 # Strip trailing slash
 KIOSK_URL=$(echo "$KIOSK_URL" | sed 's:/*$::')
 
-# --- OS Detection ---
+echo ""
 echo "=== Kiosk Client Setup ==="
 echo "Kiosk URL: $KIOSK_URL"
 echo "Scale: $KIOSK_SCALE"
 echo "Invert: $KIOSK_INVERT"
 echo "Slideshow interval: ${KIOSK_SLIDESHOW_INTERVAL}m"
+echo "User: $KIOSK_USER"
 echo ""
 
 export DEBIAN_FRONTEND=noninteractive
 
-# --- Detect OS ---
+# --- OS Detection ---
 if [ ! -f /etc/os-release ]; then
     echo "ERROR: Cannot detect OS. /etc/os-release not found."
     exit 1
@@ -192,11 +234,17 @@ elif echo "$OS_LIKE" | grep -qw "debian"; then
 fi
 
 if [ "$SUPPORTED" -eq 0 ]; then
-    echo "ERROR: Unsupported OS. This script requires Debian or Ubuntu."
+    echo ""
+    echo "ERROR: Unsupported OS."
     echo "Detected: OS=$OS_NAME VERSION=$OS_VERSION LIKES=$OS_LIKE"
     echo ""
     echo "Supported: Debian 12+, Ubuntu 22.04+"
-    exit 1
+    echo ""
+    read -rp "Continue anyway? (y/N) " cont
+    if [ "$cont" ! = "y" ] && [ "$cont" != "Y" ]; then
+        echo "Aborting."
+        exit 1
+    fi
 fi
 
 echo "OS supported: $NAME $VERSION"
@@ -209,7 +257,6 @@ apt-get update -qq
 
 # Determine package list
 PACKAGES_XORG="xorg xserver-xorg-video-fbdev xinit x11-xserver-utils"
-# Use unclutter-xfixes on Debian 12+ / Ubuntu 22.04+, unclutter as fallback
 PACKAGES_UNCLUTTER="unclutter"
 if [ "$OS_NAME" = "debian" ] && [ -n "$OS_VERSION" ] && [ "$(echo "$OS_VERSION" | cut -d. -f1)" -ge 12 ]; then
     PACKAGES_UNCLUTTER="unclutter-xfixes"
@@ -258,6 +305,13 @@ echo "=== Step 2: Creating kiosk start script ==="
 
 KIOSK_SCRIPT="/root/kiosk-start.sh"
 
+# Build Chromium flags based on invert preference
+CHROMIUM_FLAGS="--noerrdialogs --disable-infobars --no-first-run --no-default-browser-check --disable-session-crashed-bubble --kiosk --force-device-scale-factor=$KIOSK_SCALE --disable-features=Translate --disable-web-security --allow-running-insecure-content"
+
+if [ "$KIOSK_INVERT" = "true" ]; then
+    CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-features=WebUIDarkMode --force-dark-mode"
+fi
+
 cat > "$KIOSK_SCRIPT" << KIOSK_EOF
 #!/bin/bash
 #
@@ -272,12 +326,16 @@ xset s off
 xset s noblank
 xset -dpms
 
-# Hide cursor (uses whichever is available)
+# Hide cursor
 if command -v unclutter &>/dev/null; then
     unclutter -idle 2 -root 2>/dev/null &
 elif command -v unclutter-xfixes &>/dev/null; then
     unclutter-xfixes -idle 2 -root 2>/dev/null &
 fi
+
+# Set display env
+export DISPLAY=:0
+export XAUTHORITY=/root/.Xauthority
 
 # Start Chromium in kiosk mode
 $CHROMIUM_BIN \\
@@ -298,7 +356,7 @@ KIOSK_EOF
 chmod +x "$KIOSK_SCRIPT"
 echo "Kiosk script: $KIOSK_SCRIPT"
 
-# --- Step 3: Create/overwrite X session ---
+# --- Step 3: Create X session ---
 echo "=== Step 3: Configuring X session ==="
 
 cat > /root/.xinitrc << 'XINITRC_EOF'
@@ -323,7 +381,7 @@ chmod +x /root/.xsession
 echo "=== Step 4: Configuring boot to graphical target ==="
 systemctl set-default graphical.target 2>/dev/null || true
 
-# --- Step 5: Create/overwrite systemd service ---
+# --- Step 5: Create systemd service ---
 echo "=== Step 5: Creating systemd service ==="
 
 SYSTEMD_SERVICE="/etc/systemd/system/kiosk.service"
@@ -355,7 +413,7 @@ systemctl enable kiosk.service 2>/dev/null || true
 
 echo "Systemd service: $SYSTEMD_SERVICE"
 
-# --- Step 6: Create auto-login for getty (serial/console fallback) ---
+# --- Step 6: Configure auto-login for getty ---
 echo "=== Step 6: Configuring auto-login ==="
 
 GETTY_DIR="/etc/systemd/system/getty@tty1.service.d"
@@ -401,7 +459,7 @@ echo "To start now: sudo systemctl start kiosk.service"
 echo "Or reboot: sudo reboot"
 echo ""
 echo "To reconfigure later with a different URL:"
-echo "  KIOSK_URL=http://<new-server>:<port> sudo bash kiosk-client-setup.sh"
+echo "  sudo KIOSK_URL=http://<new-server>:<port> bash kiosk-client-setup.sh"
 echo ""
 echo "To remove kiosk and restore desktop:"
-echo "  KIOSK_ACTION=remove sudo bash kiosk-client-setup.sh"
+echo "  sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh"

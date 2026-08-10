@@ -337,51 +337,44 @@ sudo reboot
 
 ## Client Script Usage
 
-The `kiosk-client-setup.sh` script can be used in two modes:
-
-### Setup Mode (default)
-
-Installs Xorg, Chromium, and configures the kiosk:
+The `kiosk-client-setup.sh` script offers **three actions** via an interactive prompt:
 
 ```bash
-# Via URL (one-liner):
-curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \\
-  | sudo KIOSK_URL=http://<server>:8080 bash
-
-# Or with optional settings:
-sudo KIOSK_URL=http://<server>:8080 \\
-KIOSK_SCALE=1.5 \\
-KIOSK_INVERT=true \\
-KIOSK_SLIDESHOW_INTERVAL=5 \\
-bash kiosk-client-setup.sh
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh | sudo bash
 ```
 
-### Remove Mode
+You'll see:
+```
+What would you like to do?
+  1) Install a new kiosk (or reconfigure existing)
+  2) Update existing kiosk settings
+  3) Uninstall and remove the kiosk
+```
 
-Removes the kiosk and restores the system to a standard desktop state:
+### Non-interactive mode
+
+Skip the prompt by passing `KIOSK_ACTION` as an env var:
 
 ```bash
-sudo KIOSK_ACTION=remove bash kiosk-client-setup.sh
+# Install/Reconfigure
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
+  | sudo KIOSK_URL=http://<server>:8080 KIOSK_SCALE=1.5 bash
+
+# Remove kiosk
+curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-setup.sh \
+  | sudo KIOSK_ACTION=remove bash
 ```
 
-This will:
-- Stop and disable the `kiosk.service` systemd service
-- Remove `/etc/systemd/system/kiosk.service`
-- Remove `/root/kiosk-start.sh`, `/root/.xinitrc`, `/root/.xsession`
-- Remove the getty auto-login override
-- Restore `multi-user.target` as the default boot target
-- Optionally purge Chromium/Xorg packages (instructions printed at the end)
-
-### Environment Variables for the Script
+### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KIOSK_URL` | URL of the kiosk web server (required for setup) | _(none)_ |
+| `KIOSK_URL` | Kiosk server URL (required for setup) | _(none)_ |
 | `KIOSK_SCALE` | Chromium device scale factor | `1.0` |
 | `KIOSK_INVERT` | Invert calendar colors | `false` |
-| `KIOSK_SLIDESHOW_INTERVAL` | Photo shuffle interval in minutes | `15` |
-| `KIOSK_USER` | User to run the kiosk as | `root` |
-| `KIOSK_ACTION` | `setup` or `remove` | `setup` |
+| `KIOSK_USER` | User to run as | `root` |
+| `KIOSK_SLIDESHOW_INTERVAL` | Photo shuffle interval (min) | `15` |
+| `KIOSK_ACTION` | `setup`, `remove`, `install`, `update`, `uninstall` | _(interactive prompt)_ |
 
 ---
 
