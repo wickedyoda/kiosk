@@ -49,13 +49,25 @@
       opacity: 1;
     }
 
-    /* Right side — Google Calendar */
-    #calendar-frame {
+    /* Right side — Google Calendar with inverted colors and 2x text */
+    #calendar-container {
       flex: 1;
-      border: none;
+      position: relative;
+      overflow: hidden;
+      background: #fff;
+      /* Invert colors and scale content to 2x for readability on kiosk displays */
+      transform: scale(2);
+      transform-origin: 0 0;
+      width: 50%;
+      height: 50%;
+      filter: invert(1);
+    }
+
+    #calendar-frame {
       width: 100%;
       height: 100%;
-      background: #fff;
+      border: none;
+      display: block;
     }
 
     /* Small indicator in corner */
@@ -86,12 +98,15 @@
     </div>
 
     <!-- Right: Google Calendar (Schedule/AGENDA view, fills entire area) -->
-    <iframe
-      id="calendar-frame"
-      src="{{ google_calendar_url }}"
-      title="Google Calendar"
-      loading="lazy"
-    ></iframe>
+    <!-- Calendar is inverted and scaled 2x via the container CSS for kiosk readability -->
+    <div id="calendar-container">
+      <iframe
+        id="calendar-frame"
+        src="{{ google_calendar_url }}"
+        title="Google Calendar"
+        loading="lazy"
+      ></iframe>
+    </div>
   </div>
 
   <div id="debug-info">Refreshing in {{ (page_refresh_ms // 1000) // 60 }} min</div>
