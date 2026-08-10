@@ -273,6 +273,8 @@ sudo reboot
 | `WEATHER_API_KEY` | OpenWeatherMap API key (if WEATHER_ZIP_CODE is set) | _(empty)_ |
 | `WEATHER_UNITS` | `imperial` (°F) or `metric` (°C) | `imperial` |
 | `WEATHER_REFRESH_MINUTES` | Weather refresh interval (default 240, min 120) | `240` |
+| `WEATHER_API_LIMIT_ENABLED` | Enable daily call limit enforcement | `true` |
+| `WEATHER_API_DAILY_LIMIT` | Hard cap on weather API calls per 24h | `999` |
 | `WEB_PORT` | Port for the web server | `8080` |
 | `WEB_HOST` | Bind address for the web server | `0.0.0.0` |
 | `TRUST_PROXY` | Enable proxy header handling (for Nginx/Traefik) | `false` |

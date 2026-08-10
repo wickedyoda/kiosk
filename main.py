@@ -69,6 +69,8 @@ WEATHER_ZIP_CODE = os.environ.get("WEATHER_ZIP_CODE", "")
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
 WEATHER_UNITS = os.environ.get("WEATHER_UNITS", "imperial")
 WEATHER_REFRESH_MINUTES = max(int(os.environ.get("WEATHER_REFRESH_MINUTES", "240")), 120)  # default 4h, min 2h
+WEATHER_API_LIMIT_ENABLED = os.environ.get("WEATHER_API_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes")
+WEATHER_API_DAILY_LIMIT = int(os.environ.get("WEATHER_API_DAILY_LIMIT", "999"))  # hard cap on API calls per 24h
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
@@ -332,7 +334,41 @@ async def fetch_immich_photos() -> list[str]:
 
 _WEATHER_CACHE: dict | None = None
 _WEATHER_CACHE_TIME: float = 0
-_WEATHER_CACHE_TTL = 240 * 60  # 4 hours (OpenWeatherMap free tier rate limit: min 2h between calls per IP)
+_WEATHER_CACHE_TTL = 240 * 60  # 4 hours (OpenWeatherMap free tier rate limit: min 2h between calls)
+
+# Rate limiting for OpenWeatherMap API calls (hard cap per 24h)
+_WEATHER_CALL_COUNT = 0
+_WEATHER_CALL_TRACKING_START: float | None = None
+
+
+def _check_weather_api_limit() -> bool:
+    """Check if we've exceeded the daily API call limit.
+
+    Returns True if calls are allowed, False if limit exceeded.
+    Resets the counter every 24 hours.
+    """
+    global _WEATHER_CALL_COUNT, _WEATHER_CALL_TRACKING_START
+    now = time.time()
+
+    # Reset tracking window every 24 hours
+    if _WEATHER_CALL_TRACKING_START is None or (now - _WEATHER_CALL_TRACKING_START) >= 86400:
+        _WEATHER_CALL_COUNT = 0
+        _WEATHER_CALL_TRACKING_START = now
+
+    if _WEATHER_CALL_COUNT >= WEATHER_API_DAILY_LIMIT:
+        logger.warning(
+            "Weather API limit reached: %d calls in 24h (enabled=%s)",
+            _WEATHER_CALL_COUNT, WEATHER_API_LIMIT_ENABLED
+        )
+        return False
+
+    return True
+
+
+def _increment_weather_calls():
+    """Increment the weather API call counter."""
+    global _WEATHER_CALL_COUNT
+    _WEATHER_CALL_COUNT += 1
 
 async def fetch_weather() -> dict | None:
     """Fetch current weather from OpenWeatherMap API.
@@ -344,6 +380,10 @@ async def fetch_weather() -> dict | None:
 
     if not WEATHER_ZIP_CODE or not WEATHER_API_KEY:
         return None
+
+    # Check rate limit if enabled
+    if WEATHER_API_LIMIT_ENABLED and not _check_weather_api_limit():
+        return _WEATHER_CACHE  # Return stale cache if available
 
     now = time.time()
     if _WEATHER_CACHE is not None and (now - _WEATHER_CACHE_TIME) < _WEATHER_CACHE_TTL:
@@ -372,6 +412,7 @@ async def fetch_weather() -> dict | None:
                     "wind": int(wind_mph),
                 }
                 _WEATHER_CACHE_TIME = now
+                _increment_weather_calls()
                 logger.debug("Weather fetched: %s, %s°", _WEATHER_CACHE["description"], _WEATHER_CACHE["temp"])
                 return _WEATHER_CACHE
             else:
