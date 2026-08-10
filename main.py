@@ -59,7 +59,7 @@ IMMICH_THUMB_SIZE = os.environ.get("IMMICH_THUMB_SIZE", "large")
 SLIDESHOW_INTERVAL_MINUTES = int(os.environ.get("SLIDESHOW_INTERVAL_MINUTES", "15"))
 GOOGLE_CALENDAR_URL = os.environ.get(
     "GOOGLE_CALENDAR_URL",
-    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showTabs=0&showPrint=0&showCalendars=0&showTz=0",
+    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showAdd=0"
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
 CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "2"))
