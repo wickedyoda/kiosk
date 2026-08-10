@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="{{ page_refresh_ms // 1000 }}" />
+  <title>Kiosk</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      overflow: hidden;
+      background: #000;
+      height: 100%;
+      font-family: sans-serif;
+    }
+
+    #kiosk-container {
+      display: flex;
+      flex-direction: row;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Left side — photo slideshow */
+    #slideshow-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #slideshow-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      position: absolute;
+      top: 0;
+      left: 0;
+      opacity: 0;
+      transition: opacity 2s ease-in-out;
+    }
+
+    #slideshow-container img.active {
+      opacity: 1;
+    }
+
+    /* Right side — Google Calendar */
+    #calendar-frame {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: 100%;
+      background: #fff;
+    }
+
+    /* Small indicator in corner */
+    #debug-info {
+      position: fixed;
+      bottom: 5px;
+      right: 5px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      z-index: 9999;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="kiosk-container">
+    <!-- Left: Photo Slideshow -->
+    <div id="slideshow-container">
+      {% for photo in photos %}
+      <img src="{{ photo }}" alt="Kiosk Photo" />
+      {% endfor %}
+      {% if not photos %}
+      <img src="/static/placeholder.jpg" alt="No photos available" />
+      {% endif %}
+    </div>
+
+    <!-- Right: Google Calendar -->
+    <iframe
+      id="calendar-frame"
+      class="calendar-frame"
+      src="{{ google_calendar_url }}"
+      title="Google Calendar"
+    ></iframe>
+  </div>
+
+  <div id="debug-info">Refreshing in {{ (page_refresh_ms // 1000) // 60 }} min</div>
+
+  <script>
+    // --- Slideshow logic ---
+    const slides = document.querySelectorAll('#slideshow-container img');
+    let slideIndex = 0;
+    const slideIntervalMs = {{ slideshow_interval_ms }};
+
+    function showSlide(index) {
+      slides.forEach((s, i) => {
+        s.classList.toggle('active', i === index);
+      });
+    }
+
+    function nextSlide() {
+      slideIndex = (slideIndex + 1) % slides.length;
+      showSlide(slideIndex);
+    }
+
+    // Initialize
+    if (slides.length > 0) {
+      showSlide(slideIndex);
+      setInterval(nextSlide, slideIntervalMs);
+    }
+
+    // --- Calendar auto-refresh ---
+    const calendarRefreshSeconds = {{ calendar_refresh_seconds }};
+    const calendarFrame = document.getElementById('calendar-frame');
+
+    function refreshCalendar() {
+      // Force reload the iframe by resetting its src
+      const src = calendarFrame.src;
+      calendarFrame.src = 'about:blank';
+      setTimeout(() => {
+        calendarFrame.src = src + (src.includes('?') ? '&' : '?') + '_t=' + Date.now();
+      }, 100);
+    }
+
+    setInterval(refreshCalendar, calendarRefreshSeconds * 1000);
+  </script>
+</body>
+</html>
