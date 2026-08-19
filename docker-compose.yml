@@ -5,6 +5,8 @@ services:
       - "${WEB_PORT:-8080}:8080"
     env_file:
       - .env
+    environment:
+      - TZ=America/Chicago
     volumes:
       - kiosk-data:/app/data
       - kiosk-logs:/app/logs
