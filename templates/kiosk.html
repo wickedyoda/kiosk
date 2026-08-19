@@ -87,7 +87,7 @@
       bottom: 0;
       left: 0;
       width: 100%;
-      height: 60px;
+      height: 80px;
       background: rgba(0, 0, 0, 0.8);
       color: #fff;
       font-size: 24px;
@@ -172,9 +172,9 @@
     updateClock();
     setInterval(updateClock, 60000);
 
-    // --- Calendar date range: only show events up to 2 weeks in the future ---
+    // --- Calendar date range: only show events up to 3 weeks in the future ---
     const CALENDAR_BASE_URL = {{ google_calendar_url | tojson }};
-    const CALENDAR_WEEKS_AHEAD = 2;
+    const CALENDAR_WEEKS_AHEAD = 3;
 
     function buildCalendarUrl(weeksAhead) {
       const now = new Date();
