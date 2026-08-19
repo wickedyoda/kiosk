@@ -1,0 +1,27 @@
+# === Kiosk Client Script Environment Variables ===
+# These are passed to kiosk-client-setup.sh for non-interactive setup
+# Usage: sudo KIOSK_URL=http://server:8080 KIOSK_ACTION=install bash kiosk-client-setup.sh
+
+# --- Core ---
+# Kiosk server URL (required for install/update)
+KIOSK_URL=http://<server-ip>:8080
+
+# Action: install, update, or remove (use empty for interactive prompt)
+KIOSK_ACTION=install
+
+# Chromium device scale factor (1.0 = normal, 2.0 = 2x)
+KIOSK_SCALE=1.0
+
+# Invert calendar colors (for projector displays - white text on black)
+KIOSK_INVERT=false
+
+# User to run the kiosk as
+KIOSK_USER=root
+
+# Photo slideshow interval in minutes
+KIOSK_SLIDESHOW_INTERVAL=15
+
+# --- Weather (optional, passed to server side) ---
+# If WEATHER_ZIP_CODE is set and the server supports it, weather overlay shows
+WEATHER_ZIP_CODE=
+WEATHER_API_KEY=

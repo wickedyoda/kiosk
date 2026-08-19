@@ -393,6 +393,8 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 | `KIOSK_USER` | User to run as | `root` |
 | `KIOSK_SLIDESHOW_INTERVAL` | Photo shuffle interval (min) | `15` |
 | `KIOSK_ACTION` | `install`, `update`, `remove` | _(interactive prompt)_ |
+| `WEATHER_ZIP_CODE` | US ZIP code for weather overlay (passes to server) | _(empty)_ |
+| `WEATHER_API_KEY` | OpenWeatherMap API key (passes to server) | _(empty)_ |
 
 ---
 
