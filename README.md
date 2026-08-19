@@ -395,6 +395,9 @@ curl -s https://raw.githubusercontent.com/wickedyoda/kiosk/main/kiosk-client-set
 | `KIOSK_ACTION` | `install`, `update`, `remove` | _(interactive prompt)_ |
 | `WEATHER_ZIP_CODE` | US ZIP code for weather overlay (passes to server) | _(empty)_ |
 | `WEATHER_API_KEY` | OpenWeatherMap API key (passes to server) | _(empty)_ |
+| `CALENDAR_WEEKS_AHEAD` | Weeks of calendar events to display | `3` |
+| `CALENDAR_SCALE` | Calendar CSS scale factor | `2` |
+| `CALENDAR_INVERT` | Invert calendar colors for projector | `false` |
 
 ---
 
