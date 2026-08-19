@@ -340,8 +340,9 @@ sudo reboot
 ### Google Calendar (Right)
 
 - The calendar is embedded via an `<iframe>` in **Schedule (AGENDA) view**
-- Only events within a **2-week window** are displayed (via the `dates` URL parameter)
-- The date range is recalculated on each calendar refresh to keep the window current
+- Only events within a **3-week window** are displayed (via the `dates` URL parameter)
+- The date range is recalculated on each page load to keep the window current
+  (controlled by `CALENDAR_WEEKS_AHEAD`, default 3)
 - It auto-refreshes every `CALENDAR_REFRESH_INTERVAL_MINUTES` by reloading the iframe with an updated URL
 - The "Add to Calendar" button is **disabled** (`showAdd=0`) — kiosk displays have no input devices
 - Calendar text can be scaled via `CALENDAR_SCALE` and colors can be inverted via `CALENDAR_INVERT`

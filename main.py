@@ -20,6 +20,7 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -92,6 +93,32 @@ env = Environment(
     autoescape=select_autoescape(["html"]),
     auto_reload=True,
 )
+
+
+# ---------------------------------------------------------------------------
+# Calendar URL helper — adds date range to filter events
+# ---------------------------------------------------------------------------
+
+CALENDAR_WEEKS_AHEAD = int(os.environ.get("CALENDAR_WEEKS_AHEAD", "3"))
+
+
+def build_calendar_url(base_url: str, weeks_ahead: int = 3) -> str:
+    """Build a Google Calendar embed URL with a date range filter.
+
+    Adds a 'dates' parameter to show only events within the specified
+    number of weeks from today. This prevents the calendar from showing
+    events far in the future.
+    """
+    today = date.today()
+    start_date = today.strftime("%Y%m%d")
+    end_date = (today + timedelta(weeks=weeks_ahead)).strftime("%Y%m%d")
+    dates_param = f"dates={start_date}/{end_date}"
+
+    # Append dates param to the URL
+    if "?" in base_url:
+        return f"{base_url}&{dates_param}"
+    else:
+        return f"{base_url}?{dates_param}"
 
 
 # ---------------------------------------------------------------------------
@@ -472,12 +499,13 @@ async def kiosk_page(request: Request):
 
     template = env.get_template("kiosk.html")
     weather = await fetch_weather()
+    calendar_url = build_calendar_url(GOOGLE_CALENDAR_URL, CALENDAR_WEEKS_AHEAD)
     html = template.render(
         photos=photos,
         slideshow_interval_ms=slideshow_interval_ms,
         page_refresh_ms=page_refresh_ms,
         calendar_refresh_seconds=calendar_refresh_seconds,
-        google_calendar_url=GOOGLE_CALENDAR_URL,
+        google_calendar_url=calendar_url,
         calendar_scale=CALENDAR_SCALE,
         calendar_invert=CALENDAR_INVERT,
         weather=weather,
