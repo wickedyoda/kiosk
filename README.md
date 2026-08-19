@@ -221,7 +221,9 @@ sudo reboot
 1. Go to [Google Calendar](https://calendar.google.com)
 2. In the left panel, find your calendar → click the **three dots** → **Settings and sharing**
 3. Under **Access permissions**, check **Make available to public**
-4. Under **Integrate calendar**, copy the **Embed code** URL and paste it into `GOOGLE_CALENDAR_URL` in `.env`
+4. Under **Integrate calendar**, copy both the **Embed code** URL and the **ICS** link.
+   Paste the embed URL into `GOOGLE_CALENDAR_URL` and the ICS URL into `ICS_CALENDAR_URL` in `.env`.
+   The ICS feed enables proper event filtering (only events within `CALENDAR_WEEKS_AHEAD` are shown).
 
 ---
 
@@ -278,6 +280,7 @@ sudo reboot
 | `IMMICH_SHARED_LINK_KEY` | The shared link key from your Immich album | _(required)_ |
 | `IMMICH_THUMB_SIZE` | Thumbnail size: `original`, `large`, `medium`, `small` | `large` |
 | `GOOGLE_CALENDAR_URL` | Google Calendar embed URL | _(required)_ |
+| `ICS_CALENDAR_URL` | Google Calendar public ICS feed URL for server-side event filtering (empty = fallback to iframe) | _(default)_ |
 | `SLIDESHOW_INTERVAL_MINUTES` | How often photos change | `15` |
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |

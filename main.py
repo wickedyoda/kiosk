@@ -20,7 +20,7 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -60,7 +60,14 @@ IMMICH_THUMB_SIZE = os.environ.get("IMMICH_THUMB_SIZE", "large")
 SLIDESHOW_INTERVAL_MINUTES = int(os.environ.get("SLIDESHOW_INTERVAL_MINUTES", "15"))
 GOOGLE_CALENDAR_URL = os.environ.get(
     "GOOGLE_CALENDAR_URL",
-    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showAdd=0"
+    "https://calendar.google.com/calendar/embed?src=d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com&ctz=America%2FChicago&mode=AGENDA&showTitle=0&showPrint=0&showTabs=0&showCalendars=0&showTz=0&showNav=0&showDate=0&showAdd=0",
+)
+# ICS feed URL for server-side event filtering (Google Calendar public ICS feed).
+# If set, the server fetches and parses this feed directly, filtering events
+# to only those within CALENDAR_WEEKS_AHEAD. Falls back to iframe embed if empty.
+ICS_CALENDAR_URL = os.environ.get(
+    "ICS_CALENDAR_URL",
+    "https://calendar.google.com/calendar/ical/d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com/public/basic.ics",
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
 CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "2"))
@@ -119,6 +126,146 @@ def build_calendar_url(base_url: str, weeks_ahead: int = 3) -> str:
         return f"{base_url}&{dates_param}"
     else:
         return f"{base_url}?{dates_param}"
+
+
+# ---------------------------------------------------------------------------
+# ICS calendar parser — fetches and parses the ICS feed, filters events
+# ---------------------------------------------------------------------------
+# Cache for calendar events
+_CALENDAR_CACHE: list[dict] | None = None
+_CALENDAR_CACHE_TIME: float = 0
+
+
+def _parse_ics_date(date_str: str) -> date:
+    """Parse an ICS date string (YYYYMMDD or YYYYMMDDTHHMMSSZ) into a date."""
+    date_str = date_str.strip()
+    if "T" in date_str:
+        # Format: YYYYMMDDTHHMMSSZ
+        return datetime.strptime(date_str, "%Y%m%dT%H%M%SZ").date()
+    else:
+        # Format: YYYYMMDD
+        return datetime.strptime(date_str, "%Y%m%d").date()
+
+
+def _parse_ics(ics_content: str) -> list[dict]:
+    """Parse ICS content into a list of event dicts.
+
+    Each event dict has: summary, start (date), end (date), description, location.
+    Filters out events that have already ended.
+    """
+    events = []
+    current_event = {}
+
+    for line in ics_content.splitlines():
+        line = line.strip()
+        if line == "BEGIN:VEVENT":
+            current_event = {}
+        elif line == "END:VEVENT":
+            if "start" in current_event:
+                events.append(current_event)
+            current_event = {}
+        elif line.startswith("DTSTART"):
+            # Handle both DTSTART:20250507T132000Z and DTSTART;VALUE=DATE:20250701
+            if ":" in line:
+                value = line.split(":", 1)[1]
+                if ";" in line.split(":")[0]:
+                    # Has parameters like VALUE=DATE
+                    param_part = line.split(":")[0]
+                    if "VALUE=DATE" in param_part:
+                        current_event["start"] = _parse_ics_date(value)
+                    else:
+                        current_event["start"] = _parse_ics_date(value)
+                else:
+                    current_event["start"] = _parse_ics_date(value)
+        elif line.startswith("DTEND"):
+            if ":" in line:
+                value = line.split(":", 1)[1]
+                current_event["end"] = _parse_ics_date(value)
+        elif line.startswith("SUMMARY:"):
+            current_event["summary"] = line.split(":", 1)[1]
+        elif line.startswith("DESCRIPTION:"):
+            current_event["description"] = line.split(":", 1)[1]
+        elif line.startswith("LOCATION:"):
+            current_event["location"] = line.split(":", 1)[1]
+
+    return events
+
+
+async def fetch_calendar_events() -> list[dict]:
+    """Fetch calendar events from the ICS feed, filtered to CALENDAR_WEEKS_AHEAD.
+
+    Returns events with: summary, start, end, description, location,
+    relative_days (days from today), and day_label.
+    """
+    global _CALENDAR_CACHE, _CALENDAR_CACHE_TIME
+
+    now = time.time()
+    if _CALENDAR_CACHE is not None and (now - _CALENDAR_CACHE_TIME) < _cache_ttl:
+        return _CALENDAR_CACHE
+
+    if not ICS_CALENDAR_URL:
+        return []
+
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(ICS_CALENDAR_URL)
+            if resp.status_code != 200:
+                logger.warning("ICS calendar fetch failed: HTTP %s", resp.status_code)
+                return []
+
+            events = _parse_ics(resp.text)
+            today = date.today()
+            end_date = today + timedelta(weeks=CALENDAR_WEEKS_AHEAD)
+
+            # Filter: only events that overlap with the 3-week window
+            filtered = []
+            for event in events:
+                event_start = event.get("start")
+                event_end = event.get("end")
+
+                if not event_start:
+                    continue
+
+                # Event ends after today AND starts before or within the window
+                if event_end is None:
+                    # All-day event, treat end as same day
+                    event_end = event_start
+
+                if event_start <= end_date and (event_end is None or event_end >= today):
+                    delta = (event_start - today).days
+                    if delta < 0:
+                        day_label = "Today" if delta == 0 else f"Past ({-delta}d)"
+                    elif delta == 0:
+                        day_label = "Today"
+                    elif delta == 1:
+                        day_label = "Tomorrow"
+                    else:
+                        day_label = f"In {delta} days"
+
+                    # Build a human-readable date string
+                    day_label = event_start.strftime("%b %d (%a)")
+
+                    filtered.append({
+                        "summary": event.get("summary", "Untitled"),
+                        "start": event_start,
+                        "start_str": event_start.strftime("%Y-%m-%d"),
+                        "day_label": day_label,
+                        "description": event.get("description", ""),
+                        "location": event.get("location", ""),
+                    })
+
+            # Sort by start date
+            filtered.sort(key=lambda e: e["start"])
+
+            _CALENDAR_CACHE = filtered
+            _CALENDAR_CACHE_TIME = now
+            logger.info("Fetched %d calendar events (of %d total) within %d weeks",
+                        len(filtered), len(events), CALENDAR_WEEKS_AHEAD)
+            return filtered
+
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
+        logger.error("Error fetching ICS calendar: %s", e)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +646,7 @@ async def kiosk_page(request: Request):
 
     template = env.get_template("kiosk.html")
     weather = await fetch_weather()
+    calendar_events = await fetch_calendar_events()
     calendar_url = build_calendar_url(GOOGLE_CALENDAR_URL, CALENDAR_WEEKS_AHEAD)
     html = template.render(
         photos=photos,
@@ -506,6 +654,7 @@ async def kiosk_page(request: Request):
         page_refresh_ms=page_refresh_ms,
         calendar_refresh_seconds=calendar_refresh_seconds,
         google_calendar_url=calendar_url,
+        calendar_events=calendar_events,
         calendar_scale=CALENDAR_SCALE,
         calendar_invert=CALENDAR_INVERT,
         weather=weather,
