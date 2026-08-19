@@ -25,3 +25,9 @@ KIOSK_SLIDESHOW_INTERVAL=15
 # If WEATHER_ZIP_CODE is set and the server supports it, weather overlay shows
 WEATHER_ZIP_CODE=
 WEATHER_API_KEY=
+
+# --- Calendar ---
+# Number of weeks of calendar events to show (max future range)
+CALENDAR_WEEKS_AHEAD=3
+CALENDAR_SCALE=2
+CALENDAR_INVERT=false
