@@ -67,6 +67,40 @@
       {% if calendar_invert %}filter: invert(1);{% endif %}
     }
 
+    /* Calendar events rendered from ICS feed */
+    #calendar-events {
+      overflow-y: auto;
+      overflow-x: hidden;
+      height: calc(100% - 80px);
+      padding: 10px;
+    }
+
+    .calendar-event {
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .event-date {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4fc3f7;
+      margin-bottom: 4px;
+    }
+
+    .event-summary {
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+
+    .event-description {
+      font-size: 13px;
+      color: #ccc;
+      line-height: 1.3;
+    }
+
     /* Clock overlay */
     #clock {
       position: fixed;
@@ -134,14 +168,29 @@
       {% endif %}
     </div>
 
-    <!-- Right: Google Calendar -->
+    <!-- Right: Google Calendar (server-rendered from ICS feed) -->
     <div id="calendar-container">
-      <iframe
-        id="calendar-frame"
-        src="{{ google_calendar_url }}"
-        title="Google Calendar"
-        loading="lazy"
-      ></iframe>
+      {% if calendar_events %}
+        <div id="calendar-events">
+          {% for event in calendar_events %}
+          <div class="calendar-event">
+            <div class="event-date">{{ event.day_label }}</div>
+            <div class="event-summary">{{ event.summary }}</div>
+            {% if event.description %}
+            <div class="event-description">{{ event.description }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <!-- Fallback: Google Calendar iframe embed -->
+        <iframe
+          id="calendar-frame"
+          src="{{ google_calendar_url }}"
+          title="Google Calendar"
+          loading="lazy"
+        ></iframe>
+      {% endif %}
       {% if weather_enabled and weather %}
       <div id="weather-overlay">
         <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" alt="{{ weather.description }}" />
@@ -172,33 +221,6 @@
     }
     updateClock();
     setInterval(updateClock, 60000);
-
-    // --- Calendar date range: only show events up to 3 weeks in the future ---
-    const CALENDAR_BASE_URL = {{ google_calendar_url | tojson }};
-    const CALENDAR_WEEKS_AHEAD = 3;
-
-    function buildCalendarUrl(weeksAhead) {
-      const now = new Date();
-      const startDate = now.toISOString().slice(0, 10).replace(/-/g, "");
-      const endDate = new Date(now);
-      endDate.setDate(endDate.getDate() + (weeksAhead * 7));
-      const endDateStr = endDate.toISOString().slice(0, 10).replace(/-/g, "");
-
-      const baseUrl = CALENDAR_BASE_URL.replace(/[?&]dates=[^&]*/g, "");
-      const separator = baseUrl.includes("?") ? "&" : "?";
-      return baseUrl + separator + "dates=" + startDate + "/" + endDateStr;
-    }
-
-    // --- Calendar auto-refresh ---
-    const calendarRefreshSeconds = {{ calendar_refresh_seconds }};
-    const calendarFrame = document.getElementById('calendar-frame');
-
-    function refreshCalendar() {
-      calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
-    }
-
-    calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
-    setInterval(refreshCalendar, calendarRefreshSeconds * 1000);
 
     // --- Slideshow logic ---
     const slides = document.querySelectorAll('#slideshow-container img');
