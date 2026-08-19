@@ -49,7 +49,7 @@
       opacity: 1;
     }
 
-    /* Right side — Google Calendar with configurable scale and invert */
+    /* Right side — Google Calendar */
     #calendar-container {
       flex: 1;
       position: relative;
@@ -62,16 +62,24 @@
       height: 100%;
       border: none;
       display: block;
-      /* Scale content and invert colors — values from .env */
-      transform: scale({{ calendar_scale }});
-      transform-origin: 0 0;
-      {% if calendar_invert %}filter: invert(1);{% endif %}
-      /* Compensate for the scale by sizing to inverse */
-      width: calc(100% / {{ calendar_scale }});
-      height: calc(100% / {{ calendar_scale }});
     }
 
-    /* Weather overlay at bottom of calendar */
+    /* Clock overlay */
+    #clock {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-size: 48px;
+      font-weight: bold;
+      padding: 8px 16px;
+      border-radius: 8px;
+      z-index: 1000;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Weather overlay */
     {% if weather_enabled %}
     #weather-overlay {
       position: absolute;
@@ -79,7 +87,7 @@
       left: 0;
       width: 100%;
       background: rgba(0, 0, 0, 0.1);
-      color: #fff;
+      color: #000;
       font-size: 18px;
       padding: 10px 16px;
       display: flex;
@@ -93,9 +101,6 @@
       width: 32px;
       height: 32px;
     }
-
-    /* Match the overlay font size to the calendar's visible text after scaling */
-    /* The iframe is scaled by CALENDAR_SCALE, so we keep overlay unscaled at 18px */
     {% endif %}
 
     /* Small indicator in corner */
@@ -114,6 +119,7 @@
   </style>
 </head>
 <body>
+  <div id="clock"></div>
   <div id="kiosk-container">
     <!-- Left: Photo Slideshow -->
     <div id="slideshow-container">
@@ -151,6 +157,16 @@
   <div id="debug-info">Refreshing in {{ (page_refresh_ms // 1000) // 60 }} min</div>
 
   <script>
+    // --- Clock ---
+    function updateClock() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('clock').textContent = h + ':' + m;
+    }
+    updateClock();
+    setInterval(updateClock, 60000);
+
     // --- Calendar date range: only show events up to 2 weeks in the future ---
     const CALENDAR_BASE_URL = {{ google_calendar_url | tojson }};
     const CALENDAR_WEEKS_AHEAD = 2;
@@ -162,7 +178,6 @@
       endDate.setDate(endDate.getDate() + (weeksAhead * 7));
       const endDateStr = endDate.toISOString().slice(0, 10).replace(/-/g, "");
 
-      // Remove any existing dates param, then append the new one
       const baseUrl = CALENDAR_BASE_URL.replace(/[?&]dates=[^&]*/g, "");
       const separator = baseUrl.includes("?") ? "&" : "?";
       return baseUrl + separator + "dates=" + startDate + "/" + endDateStr;
@@ -176,10 +191,7 @@
       calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
     }
 
-    // Set the initial calendar URL with date range
     calendarFrame.src = buildCalendarUrl(CALENDAR_WEEKS_AHEAD);
-
-    // Refresh calendar periodically (rebuild URL with fresh date range)
     setInterval(refreshCalendar, calendarRefreshSeconds * 1000);
 
     // --- Slideshow logic ---
@@ -199,7 +211,6 @@
       showSlide(slideIndex);
     }
 
-    // Initialize
     if (slides.length > 0) {
       showSlide(slideIndex);
       setInterval(nextSlide, slideIntervalMs);
