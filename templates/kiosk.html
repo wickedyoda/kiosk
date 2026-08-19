@@ -157,12 +157,15 @@
   <div id="debug-info">Refreshing in {{ (page_refresh_ms // 1000) // 60 }} min</div>
 
   <script>
-    // --- Clock ---
+    // --- Clock (12-hour format) ---
     function updateClock() {
       const now = new Date();
-      const h = String(now.getHours()).padStart(2, '0');
+      let h = now.getHours();
       const m = String(now.getMinutes()).padStart(2, '0');
-      document.getElementById('clock').textContent = h + ':' + m;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      h = h % 12;
+      if (h === 0) h = 12;
+      document.getElementById('clock').textContent = h + ':' + m + ' ' + ampm;
     }
     updateClock();
     setInterval(updateClock, 60000);
