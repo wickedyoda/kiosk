@@ -88,10 +88,13 @@
       margin-bottom: 4px;
     }
 
+    .event-time {
+      font-size: 14px;
+      color: #81c784;
+      margin-bottom: 4px;
+    }
+
     .event-summary {
-      font-size: 16px;
-      font-weight: bold;
-      color: #fff;
       margin-bottom: 2px;
     }
 
@@ -174,7 +177,10 @@
         <div id="calendar-events">
           {% for event in calendar_events %}
           <div class="calendar-event">
-            <div class="event-date">{{ event.day_label }}</div>
+            <div class="event-date">{{ event.date }}</div>
+            {% if not event.is_all_day %}
+            <div class="event-time">{{ event.time_str }}</div>
+            {% endif %}
             <div class="event-summary">{{ event.summary }}</div>
             {% if event.description %}
             <div class="event-description">{{ event.description }}</div>
