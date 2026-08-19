@@ -20,11 +20,12 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -108,6 +109,9 @@ env = Environment(
 
 CALENDAR_WEEKS_AHEAD = int(os.environ.get("CALENDAR_WEEKS_AHEAD", "3"))
 
+# Timezone for display (used to convert UTC event times to local)
+CALENDAR_TZ = ZoneInfo(os.environ.get("CALENDAR_TZ", "America/Chicago"))
+
 
 def build_calendar_url(base_url: str, weeks_ahead: int = 3) -> str:
     """Build a Google Calendar embed URL with a date range filter.
@@ -136,22 +140,26 @@ _CALENDAR_CACHE: list[dict] | None = None
 _CALENDAR_CACHE_TIME: float = 0
 
 
-def _parse_ics_date(date_str: str) -> date:
-    """Parse an ICS date string (YYYYMMDD or YYYYMMDDTHHMMSSZ) into a date."""
-    date_str = date_str.strip()
-    if "T" in date_str:
+def _parse_ics_datetime(dt_str: str) -> datetime:
+    """Parse an ICS datetime string into a datetime (in UTC).
+
+    Handles:
+      - YYYYMMDDTHHMMSSZ (UTC)
+      - YYYYMMDD (all-day, returns midnight)
+    """
+    dt_str = dt_str.strip()
+    if "T" in dt_str:
         # Format: YYYYMMDDTHHMMSSZ
-        return datetime.strptime(date_str, "%Y%m%dT%H%M%SZ").date()
+        return datetime.strptime(dt_str, "%Y%m%dT%H%M%SZ")
     else:
-        # Format: YYYYMMDD
-        return datetime.strptime(date_str, "%Y%m%d").date()
+        # Format: YYYYMMDD — all-day event
+        return datetime.strptime(dt_str, "%Y%m%d")
 
 
 def _parse_ics(ics_content: str) -> list[dict]:
     """Parse ICS content into a list of event dicts.
 
-    Each event dict has: summary, start (date), end (date), description, location.
-    Filters out events that have already ended.
+    Each event dict has: summary, start (date/datetime), end_dt, description, location.
     """
     events = []
     current_event = {}
@@ -168,19 +176,19 @@ def _parse_ics(ics_content: str) -> list[dict]:
             # Handle both DTSTART:20250507T132000Z and DTSTART;VALUE=DATE:20250701
             if ":" in line:
                 value = line.split(":", 1)[1]
-                if ";" in line.split(":")[0]:
-                    # Has parameters like VALUE=DATE
-                    param_part = line.split(":")[0]
-                    if "VALUE=DATE" in param_part:
-                        current_event["start"] = _parse_ics_date(value)
-                    else:
-                        current_event["start"] = _parse_ics_date(value)
+                # Store as datetime (UTC) for all events
+                current_event["start"] = _parse_ics_datetime(value)
+                # Also store date for filtering
+                if "T" in value:
+                    # Timed event — need to convert to local tz later
+                    current_event["end_dt"] = None  # will be set if DTEND present
                 else:
-                    current_event["start"] = _parse_ics_date(value)
+                    # All-day event — convert to date
+                    current_event["start"] = current_event["start"].date()
         elif line.startswith("DTEND"):
             if ":" in line:
                 value = line.split(":", 1)[1]
-                current_event["end"] = _parse_ics_date(value)
+                current_event["end_dt"] = _parse_ics_datetime(value)
         elif line.startswith("SUMMARY:"):
             current_event["summary"] = line.split(":", 1)[1]
         elif line.startswith("DESCRIPTION:"):
@@ -221,41 +229,48 @@ async def fetch_calendar_events() -> list[dict]:
             filtered = []
             for event in events:
                 event_start = event.get("start")
-                event_end = event.get("end")
+                event_end = event.get("end_dt")
 
                 if not event_start:
                     continue
 
-                # Event ends after today AND starts before or within the window
-                if event_end is None:
-                    # All-day event, treat end as same day
-                    event_end = event_start
-
-                if event_start <= end_date and (event_end is None or event_end >= today):
-                    delta = (event_start - today).days
-                    if delta < 0:
-                        day_label = "Today" if delta == 0 else f"Past ({-delta}d)"
-                    elif delta == 0:
-                        day_label = "Today"
-                    elif delta == 1:
-                        day_label = "Tomorrow"
+                # Handle both date and datetime (UTC) start values
+                if isinstance(event_start, datetime):
+                    # Timed event — convert to local timezone
+                    local_start = event_start.replace(tzinfo=timezone.utc).astimezone(CALENDAR_TZ)
+                    start_date_val = local_start.date()
+                    
+                    if event_end and isinstance(event_end, datetime):
+                        local_end = event_end.replace(tzinfo=timezone.utc).astimezone(CALENDAR_TZ)
+                        end_date_val = local_end.date()
                     else:
-                        day_label = f"In {delta} days"
+                        end_date_val = start_date_val
+                    
+                    time_str = local_start.strftime("%-I:%M %p")
+                else:
+                    # All-day event (date object)
+                    start_date_val = event_start
+                    end_date_val = event.get("end") or event_start
+                    if isinstance(end_date_val, datetime):
+                        end_date_val = end_date_val.date()
+                    time_str = ""
 
-                    # Build a human-readable date string
-                    day_label = event_start.strftime("%b %d (%a)")
-
+                # Filter: event overlaps with our window
+                if start_date_val <= end_date and (end_date_val is None or end_date_val >= today):
+                    day_label = start_date_val.strftime("%b %d (%a)")
+                    
                     filtered.append({
                         "summary": event.get("summary", "Untitled"),
-                        "start": event_start,
-                        "start_str": event_start.strftime("%Y-%m-%d"),
-                        "day_label": day_label,
+                        "date": day_label,
+                        "time_str": time_str,
+                        "is_all_day": not time_str,
+                        "start_str": start_date_val.strftime("%Y-%m-%d"),
                         "description": event.get("description", ""),
                         "location": event.get("location", ""),
                     })
 
-            # Sort by start date
-            filtered.sort(key=lambda e: e["start"])
+            # Sort by start date/time
+            filtered.sort(key=lambda e: (e["start_str"], e["time_str"]))
 
             _CALENDAR_CACHE = filtered
             _CALENDAR_CACHE_TIME = now
