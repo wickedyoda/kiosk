@@ -80,16 +80,17 @@
       font-family: 'Courier New', monospace;
     }
 
-    /* Weather overlay */
+    /* Weather overlay — positioned at bottom to cover any "Add to Calendar" link */
     {% if weather_enabled %}
     #weather-overlay {
       position: absolute;
       bottom: 0;
       left: 0;
       width: 100%;
-      background: rgba(0, 0, 0, 0.1);
-      color: #000;
-      font-size: 18px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      font-size: 24px;
       padding: 10px 16px;
       display: flex;
       align-items: center;
@@ -99,8 +100,8 @@
     }
 
     #weather-overlay img {
-      width: 32px;
-      height: 32px;
+      width: 48px;
+      height: 48px;
     }
     {% endif %}
 
