@@ -63,7 +63,7 @@
       height: 100%;
       border: none;
       display: block;
-      /* Scale content and invert colors — values from .env */
+      /* Invert colors only for the iframe embed (for projector displays) */
       {% if calendar_invert %}filter: invert(1);{% endif %}
     }
 
@@ -82,24 +82,32 @@
     }
 
     .event-date {
-      font-size: 14px;
+      font-size: 16px;
       font-weight: bold;
       color: #4fc3f7;
       margin-bottom: 4px;
     }
 
     .event-time {
-      font-size: 14px;
+      font-size: 16px;
       color: #81c784;
       margin-bottom: 4px;
     }
 
+    /* Event text colors — explicitly set since parent has dark bg */
+    .event-summary,
+    .event-description {
+      color: #fff;
+    }
+
     .event-summary {
+      font-size: 18px;
+      font-weight: bold;
       margin-bottom: 2px;
     }
 
     .event-description {
-      font-size: 13px;
+      font-size: 14px;
       color: #ccc;
       line-height: 1.3;
     }
