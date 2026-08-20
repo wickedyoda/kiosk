@@ -8,6 +8,11 @@ on:
     branches:
       - main
 
+# Grant GITHUB_TOKEN write permission to push packages to GHCR
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
