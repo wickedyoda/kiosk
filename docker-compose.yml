@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: ghcr.io/wickedyoda/kiosk:latest
     ports:
       - "${WEB_PORT:-8080}:8080"
     env_file:
