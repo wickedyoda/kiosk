@@ -145,12 +145,19 @@ def _parse_ics_datetime(dt_str: str) -> datetime:
 
     Handles:
       - YYYYMMDDTHHMMSSZ (UTC)
-      - YYYYMMDD (all-day, returns midnight)
+      - YYYYMMDDTHHMMSS (floating local time — no Z suffix)
+      - YYYYMMDD (all-day, returns midnight as date)
     """
     dt_str = dt_str.strip()
     if "T" in dt_str:
-        # Format: YYYYMMDDTHHMMSSZ
-        return datetime.strptime(dt_str, "%Y%m%dT%H%M%SZ")
+        # Strip any trailing Z for uniform parsing
+        clean = dt_str.rstrip("Z")
+        try:
+            # Format: YYYYMMDDTHHMMSSZ (UTC) or YYYYMMDDTHHMMSS (local)
+            return datetime.strptime(clean, "%Y%m%dT%H%M%S")
+        except ValueError:
+            # Format: YYYYMMDDTHHMM (HHMM, no seconds)
+            return datetime.strptime(clean, "%Y%m%dT%H%M")
     else:
         # Format: YYYYMMDD — all-day event
         return datetime.strptime(dt_str, "%Y%m%d")
@@ -234,14 +241,23 @@ async def fetch_calendar_events() -> list[dict]:
                 if not event_start:
                     continue
 
-                # Handle both date and datetime (UTC) start values
+                # Handle both date and datetime (UTC or local) start values
                 if isinstance(event_start, datetime):
                     # Timed event — convert to local timezone
-                    local_start = event_start.replace(tzinfo=timezone.utc).astimezone(CALENDAR_TZ)
+                    # If the datetime is naive (no tzinfo), assume local time
+                    if event_start.tzinfo is None:
+                        # Naive datetime — assume it's already in local timezone
+                        local_start = event_start.replace(tzinfo=CALENDAR_TZ)
+                    else:
+                        # Timezone-aware datetime — convert to local timezone
+                        local_start = event_start.astimezone(CALENDAR_TZ)
                     start_date_val = local_start.date()
                     
                     if event_end and isinstance(event_end, datetime):
-                        local_end = event_end.replace(tzinfo=timezone.utc).astimezone(CALENDAR_TZ)
+                        if event_end.tzinfo is None:
+                            local_end = event_end.replace(tzinfo=CALENDAR_TZ)
+                        else:
+                            local_end = event_end.astimezone(CALENDAR_TZ)
                         end_date_val = local_end.date()
                     else:
                         end_date_val = start_date_val
