@@ -81,11 +81,24 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
+    .calendar-event-group {
+      margin-bottom: 20px;
+    }
+
     .event-date {
       font-size: 14px;
       font-weight: bold;
       color: #4fc3f7;
       margin-bottom: 4px;
+    }
+
+    .event-date-group {
+      font-size: 18px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.3);
     }
 
     .event-time {
@@ -183,16 +196,20 @@
     <div id="calendar-container">
       {% if calendar_events %}
         <div id="calendar-events">
-          {% for event in calendar_events %}
-          <div class="calendar-event">
-            <div class="event-date">{{ event.date }}</div>
-            {% if not event.is_all_day %}
-            <div class="event-time">{{ event.time_str }}{% if event.end_time_str %}-{{ event.end_time_str }}{% endif %}</div>
-            {% endif %}
-            <div class="event-summary">{{ event.summary }}</div>
-            {% if event.description %}
-            <div class="event-description">{{ event.description }}</div>
-            {% endif %}
+          {% for group in calendar_events %}
+          <div class="calendar-event-group">
+            <div class="event-date-group">{{ group.date }}</div>
+            {% for event in group.events %}
+            <div class="calendar-event">
+              {% if not event.is_all_day %}
+              <div class="event-time">{{ event.time_str }}{% if event.end_time_str %}-{{ event.end_time_str }}{% endif %}</div>
+              {% endif %}
+              <div class="event-summary">{{ event.summary }}</div>
+              {% if event.description %}
+              <div class="event-description">{{ event.description }}</div>
+              {% endif %}
+            </div>
+            {% endfor %}
           </div>
           {% endfor %}
         </div>

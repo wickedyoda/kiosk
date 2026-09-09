@@ -292,11 +292,20 @@ async def fetch_calendar_events() -> list[dict]:
             # Sort by start date/time
             filtered.sort(key=lambda e: (e["start_str"], e["time_str"]))
 
-            _CALENDAR_CACHE = filtered
+            # Group events by date for display
+            from itertools import groupby
+            grouped = []
+            for date_str, group in groupby(filtered, key=lambda e: e["date"]):
+                grouped.append({
+                    "date": date_str,
+                    "events": list(group)
+                })
+
+            _CALENDAR_CACHE = grouped
             _CALENDAR_CACHE_TIME = now
             logger.info("Fetched %d calendar events (of %d total) within %d weeks",
                         len(filtered), len(events), CALENDAR_WEEKS_AHEAD)
-            return filtered
+            return grouped
 
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
         logger.error("Error fetching ICS calendar: %s", e)
