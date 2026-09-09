@@ -150,16 +150,17 @@ def _parse_ics_datetime(dt_str: str) -> datetime:
     """
     dt_str = dt_str.strip()
     if "T" in dt_str:
-        # Strip any trailing Z for uniform parsing
+        is_utc_z = dt_str.endswith("Z")
         clean = dt_str.rstrip("Z")
         try:
-            # Format: YYYYMMDDTHHMMSSZ (UTC) or YYYYMMDDTHHMMSS (local)
-            return datetime.strptime(clean, "%Y%m%dT%H%M%S")
+            dt = datetime.strptime(clean, "%Y%m%dT%H%M%S")
         except ValueError:
-            # Format: YYYYMMDDTHHMM (HHMM, no seconds)
-            return datetime.strptime(clean, "%Y%m%dT%H%M")
+            dt = datetime.strptime(clean, "%Y%m%dT%H%M")
+        # If the original had a Z suffix, mark as UTC so downstream code converts properly
+        if is_utc_z:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
     else:
-        # Format: YYYYMMDD — all-day event
         return datetime.strptime(dt_str, "%Y%m%d")
 
 
