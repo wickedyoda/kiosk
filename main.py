@@ -259,8 +259,10 @@ async def fetch_calendar_events() -> list[dict]:
                         else:
                             local_end = event_end.astimezone(CALENDAR_TZ)
                         end_date_val = local_end.date()
+                        end_time_str = local_end.strftime("%-I:%M %p")
                     else:
                         end_date_val = start_date_val
+                        end_time_str = ""
                     
                     time_str = local_start.strftime("%-I:%M %p")
                 else:
@@ -270,6 +272,7 @@ async def fetch_calendar_events() -> list[dict]:
                     if isinstance(end_date_val, datetime):
                         end_date_val = end_date_val.date()
                     time_str = ""
+                    end_time_str = ""
 
                 # Filter: event overlaps with our window
                 if start_date_val <= end_date and (end_date_val is None or end_date_val >= today):
@@ -279,6 +282,7 @@ async def fetch_calendar_events() -> list[dict]:
                         "summary": event.get("summary", "Untitled"),
                         "date": day_label,
                         "time_str": time_str,
+                        "end_time_str": end_time_str,
                         "is_all_day": not time_str,
                         "start_str": start_date_val.strftime("%Y-%m-%d"),
                         "description": event.get("description", ""),
