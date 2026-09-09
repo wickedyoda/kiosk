@@ -187,7 +187,7 @@
           <div class="calendar-event">
             <div class="event-date">{{ event.date }}</div>
             {% if not event.is_all_day %}
-            <div class="event-time">{{ event.time_str }}</div>
+            <div class="event-time">{{ event.time_str }}{% if event.end_time_str %}-{{ event.end_time_str }}{% endif %}</div>
             {% endif %}
             <div class="event-summary">{{ event.summary }}</div>
             {% if event.description %}
