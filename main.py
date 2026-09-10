@@ -709,6 +709,27 @@ async def kiosk_page(request: Request):
     return html
 
 
+# ---------------------------------------------------------------------------
+# On-demand reload endpoint — visit /reload to trigger all displays to refresh
+# ---------------------------------------------------------------------------
+_RELOAD_FLAG = {"reload": False}
+
+
+@app.get("/reload")
+async def trigger_reload():
+    """Flag the page for reload. Polling clients will detect and reload."""
+    _RELOAD_FLAG["reload"] = True
+    return {"status": "reload triggered"}
+
+
+@app.get("/api/reload")
+async def reload_status():
+    """Return reload flag and reset it. Clients poll this endpoint."""
+    flag = _RELOAD_FLAG["reload"]
+    _RELOAD_FLAG["reload"] = False
+    return {"reload": flag}
+
+
 @app.get("/api/photos")
 async def api_photos():
     """JSON API returning current photo URLs — for debugging or external use."""
