@@ -5,10 +5,10 @@ Displays running in kiosk mode have no keyboard or mouse, so use the `/reload` e
 
 ```bash
 # From any phone or computer on the same network:
-curl http://kiosk.tyates.one/reload
+curl http://docker1.tail99133.ts.net:8080/reload
 
 # Or open in any browser:
-http://kiosk.tyates.one/reload
+http://docker1.tail99133.ts.net:8080/reload
 ```
 
 When triggered, all kiosk displays poll `/api/reload` every 5 seconds and automatically refresh. Each display clears the reload flag after reloading.
