@@ -274,6 +274,21 @@
       showSlide(slideIndex);
       setInterval(nextSlide, slideIntervalMs);
     }
+
+    // --- On-demand reload poller (for displays without keyboards/mice) ---
+    // When /reload is hit externally, this detects it and reloads the page
+    async function checkReload() {
+      try {
+        const res = await fetch('/api/reload');
+        const data = await res.json();
+        if (data.reload) {
+          window.location.reload();
+        }
+      } catch (e) {
+        // Silently ignore poll errors — server may restart briefly
+      }
+    }
+    setInterval(checkReload, 5000);
   </script>
 </body>
 </html>

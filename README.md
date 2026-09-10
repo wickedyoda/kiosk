@@ -1,3 +1,17 @@
+
+## On-Demand Reload
+
+Displays running in kiosk mode have no keyboard or mouse, so use the `/reload` endpoint to trigger an immediate page refresh:
+
+```bash
+# From any phone or computer on the same network:
+curl http://kiosk.tyates.one/reload
+
+# Or open in any browser:
+http://kiosk.tyates.one/reload
+```
+
+When triggered, all kiosk displays poll `/api/reload` every 5 seconds and automatically refresh. Each display clears the reload flag after reloading.
 # Kiosk
 
 A **Docker-hosted kiosk web application** that displays a split-screen layout:
