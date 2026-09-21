@@ -25,6 +25,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+from dateutil.rrule import rrulestr
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
@@ -167,7 +168,8 @@ def _parse_ics_datetime(dt_str: str) -> datetime:
 def _parse_ics(ics_content: str) -> list[dict]:
     """Parse ICS content into a list of event dicts.
 
-    Each event dict has: summary, start (date/datetime), end_dt, description, location.
+    Each event dict has: summary, start (date/datetime), end_dt, description,
+    location, rrule (RRULE string if present), and exdates (list of EXDATE strings).
     """
     events = []
     current_event = {}
@@ -203,11 +205,104 @@ def _parse_ics(ics_content: str) -> list[dict]:
             current_event["description"] = line.split(":", 1)[1]
         elif line.startswith("LOCATION:"):
             current_event["location"] = line.split(":", 1)[1]
+        elif line.startswith("RRULE:"):
+            current_event["rrule"] = line.split(":", 1)[1]
+        elif line.startswith("EXDATE:"):
+            if "exdates" not in current_event:
+                current_event["exdates"] = []
+            exdate_val = line.split(":", 1)[1]
+            for exd in exdate_val.split(","):
+                current_event["exdates"].append(exd.strip())
 
     return events
 
 
-async def fetch_calendar_events() -> list[dict]:
+
+def _expand_recurring_events(events: list[dict], start_date: date, end_date: date) -> list[dict]:
+    """Expand events with RRULE into individual occurrences within the date window.
+
+    Uses python-dateutil's rrule parser to handle FREQ=DAILY, WEEKLY, etc.
+    Handles EXDATE exceptions and UNTIL/COUNT limits. Non-recurring events
+    are passed through unchanged.
+
+    Returns a new list where each recurring event is replaced by its
+    individual occurrences that fall within [start_date, end_date].
+    """
+    expanded = []
+    for event in events:
+        rrule_str = event.get("rrule")
+        if not rrule_str or "start" not in event:
+            expanded.append(event)
+            continue
+
+        start = event["start"]
+        # Determine dtstart for the rrule — must be timezone-aware
+        if isinstance(start, datetime):
+            if start.tzinfo is not None:
+                dtstart = start.astimezone(CALENDAR_TZ)
+            else:
+                dtstart = start.replace(tzinfo=CALENDAR_TZ)
+        elif isinstance(start, date):
+            dtstart = datetime.combine(start, datetime.min.time(), tzinfo=CALENDAR_TZ)
+        else:
+            expanded.append(event)
+            continue
+
+        try:
+            rule = rrulestr(rrule_str, dtstart=dtstart)
+        except Exception as e:
+            logger.warning("Failed to parse RRULE '%s': %s", rrule_str, e)
+            expanded.append(event)
+            continue
+
+        # Expand within the date window
+        window_start = datetime.combine(start_date, datetime.min.time(), tzinfo=CALENDAR_TZ)
+        window_end = datetime.combine(end_date, datetime.max.time(), tzinfo=CALENDAR_TZ)
+
+        occurrences = list(rule.between(window_start, window_end, inc=True))
+
+        if not occurrences:
+            continue
+
+        # Parse EXDATE exceptions
+        exdate_set = set()
+        for exdate_str in event.get("exdates", []):
+            try:
+                exdt = _parse_ics_datetime(exdate_str)
+                if isinstance(exdt, datetime):
+                    if exdt.tzinfo is None:
+                        exdt = exdt.replace(tzinfo=CALENDAR_TZ)
+                    else:
+                        exdt = exdt.astimezone(CALENDAR_TZ)
+                else:
+                    exdt = datetime.combine(exdt, datetime.min.time(), tzinfo=CALENDAR_TZ)
+                exdate_set.add(exdt)
+            except Exception:
+                pass
+
+        # Calculate event duration for end time calculation
+        event_start = event.get("start")
+        event_end = event.get("end_dt")
+        if isinstance(event_start, datetime) and isinstance(event_end, datetime):
+            duration = event_end - event_start
+        else:
+            duration = None
+
+        for occ in occurrences:
+            if occ in exdate_set:
+                continue
+
+            new_event = dict(event)
+            new_event["start"] = occ
+            if duration:
+                new_event["end_dt"] = occ + duration
+            else:
+                new_event["end_dt"] = None
+            expanded.append(new_event)
+
+    return expanded
+
+
     """Fetch calendar events from the ICS feed, filtered to CALENDAR_WEEKS_AHEAD.
 
     Returns events with: summary, start, end, description, location,
@@ -230,10 +325,13 @@ async def fetch_calendar_events() -> list[dict]:
                 return []
 
             events = _parse_ics(resp.text)
+            raw_count = len(events)
             today = date.today()
             end_date = today + timedelta(weeks=CALENDAR_WEEKS_AHEAD)
+            # Expand recurring events (RRULE) within the date window
+            events = _expand_recurring_events(events, today, end_date)
 
-            # Filter: only events that overlap with the 2-week window
+            # Filter: only events that overlap with the display window
             filtered = []
             for event in events:
                 event_start = event.get("start")
@@ -304,8 +402,8 @@ async def fetch_calendar_events() -> list[dict]:
 
             _CALENDAR_CACHE = grouped
             _CALENDAR_CACHE_TIME = now
-            logger.info("Fetched %d calendar events (of %d total) within %d weeks",
-                        len(filtered), len(events), CALENDAR_WEEKS_AHEAD)
+            logger.info("Fetched %d calendar events (of %d expanded from %d in feed) within %d weeks",
+                        len(filtered), len(events), raw_count, CALENDAR_WEEKS_AHEAD)
             return grouped
 
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
