@@ -107,13 +107,13 @@ env = Environment(
 # Calendar URL helper — adds date range to filter events
 # ---------------------------------------------------------------------------
 
-CALENDAR_WEEKS_AHEAD = int(os.environ.get("CALENDAR_WEEKS_AHEAD", "2"))
+CALENDAR_WEEKS_AHEAD = int(os.environ.get("CALENDAR_WEEKS_AHEAD", "3"))
 
 # Timezone for display (used to convert UTC event times to local)
 CALENDAR_TZ = ZoneInfo(os.environ.get("CALENDAR_TZ", "America/Chicago"))
 
 
-def build_calendar_url(base_url: str, weeks_ahead: int = 2) -> str:
+def build_calendar_url(base_url: str, weeks_ahead: int = 3) -> str:
     """Build a Google Calendar embed URL with a date range filter.
 
     Adds a 'dates' parameter to show only events within the specified
