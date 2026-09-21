@@ -303,6 +303,7 @@ def _expand_recurring_events(events: list[dict], start_date: date, end_date: dat
     return expanded
 
 
+async def fetch_calendar_events() -> list[dict]:
     """Fetch calendar events from the ICS feed, filtered to CALENDAR_WEEKS_AHEAD.
 
     Returns events with: summary, start, end, description, location,
