@@ -326,10 +326,10 @@ sudo reboot
 ├── .gitignore
 ├── .dockerignore
 ├── main.py              # FastAPI web server
-├── Dockerfile           # Docker image (dev)
-├── Dockerfile.prod      # Docker image (production)
+├── Dockerfile           # Docker image (single build definition)
 ├── docker-compose.yml   # Docker Compose configuration
-├── requirements.txt     # Python dependencies
+├── requirements.txt     # Python dependency constraints (human-edited)
+├── requirements.lock    # Resolved dependency set (installed in the image)
 ├── Makefile             # Convenience targets (build, up, down, logs, restart)
 ├── templates/
 │   └── kiosk.html       # Kiosk page HTML template
