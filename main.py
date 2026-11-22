@@ -72,7 +72,7 @@ ICS_CALENDAR_URL = os.environ.get(
     "https://calendar.google.com/calendar/ical/d1hts4hbba10stq9eg2r0r52o8%40group.calendar.google.com/public/basic.ics",
 )
 CALENDAR_REFRESH_INTERVAL_MINUTES = int(os.environ.get("CALENDAR_REFRESH_INTERVAL_MINUTES", "30"))
-CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "2"))
+CALENDAR_SCALE = float(os.environ.get("CALENDAR_SCALE", "1.5"))
 CALENDAR_INVERT = os.environ.get("CALENDAR_INVERT", "true").lower() in ("true", "1", "yes")
 # Weather overlay settings
 WEATHER_ZIP_CODE = os.environ.get("WEATHER_ZIP_CODE", "")

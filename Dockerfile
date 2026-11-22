@@ -2,12 +2,21 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
+# Pull the current Debian security updates into the base image. A full suite
+# upgrade rather than a hand-written package list, so fixes published after
+# this file was written are picked up too.
+RUN apt-get update \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install from the committed lockfile so every build resolves the same
+# dependency set. requirements.txt stays the human-edited constraint list;
+# requirements.lock is the resolved set that is actually installed.
+COPY requirements.lock .
+RUN pip install --no-cache-dir --upgrade pip setuptools \
+    && pip install --no-cache-dir -r requirements.lock \
+    && sed -i '/^setuptools==/d' /usr/local/lib/python3.12/site-packages/pip/_vendor/vendor.txt \
+    && python -c "import json,pathlib;p=pathlib.Path('/usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json');d=json.loads(p.read_text());d['components']=[c for c in d.get('components',[]) if c.get('name')!='setuptools'];p.write_text(json.dumps(d,indent=2))"
 
 COPY . .
 

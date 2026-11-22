@@ -128,10 +128,10 @@ curl http://localhost:8080/health
 
 ## Production Deployment
 
-For production, use the multi-stage `Dockerfile.prod`:
+Build from the single `Dockerfile`:
 
 ```bash
-docker build -f Dockerfile.prod -t kiosk:latest .
+docker build -t kiosk:latest .
 docker run -d --name kiosk-app -p 8080:8080 --env-file .env kiosk:latest
 ```
 

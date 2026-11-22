@@ -7,6 +7,10 @@ on:
   pull_request:
     branches:
       - main
+  # Weekly rebuild so the base image and OS packages do not age in place.
+  # A published image that is never rebuilt silently accumulates CVEs.
+  schedule:
+    - cron: "17 3 * * 1"
 
 # Grant GITHUB_TOKEN write permission to push packages to GHCR
 permissions:
