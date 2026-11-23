@@ -4,15 +4,18 @@ on:
   push:
     branches:
       - main
+      # Feature branch: publishes to its own image (see "Determine image name").
+      # The image name gets "--gmail" appended so releases stay distinguishable.
+      - feature/gmail-icon-panel
   pull_request:
     branches:
       - main
-  # Weekly rebuild so the base image and OS packages do not age in place.
+  # Weekly rebuild so the base image and OS do not age in place.
   # A published image that is never rebuilt silently accumulates CVEs.
   schedule:
     - cron: "17 3 * * 1"
 
-# Grant GITHUB_TOKEN write permission to push packages to GHCR
+# Grant GITHUB_TOKEN permission to push packages to GHCR
 permissions:
   contents: write
   packages: write
@@ -27,6 +30,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Determine image name
+        id: image
+        run: |
+          # The Gmail feature branch publishes to a separate package so it can be
+          # deployed and tested without touching the main image. "--gmail" is
+          # appended to the image name, e.g. ghcr.io/<owner>/<repo>--gmail.
+          if [ "${GITHUB_REF}" = "refs/heads/feature/gmail-icon-panel" ]; then
+            echo "name=ghcr.io/${GITHUB_REPOSITORY}--gmail" >> "$GITHUB_OUTPUT"
+            echo "is_gmail_branch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=ghcr.io/${GITHUB_REPOSITORY}" >> "$GITHUB_OUTPUT"
+            echo "is_gmail_branch=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -38,20 +55,20 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,format=long
             type=ref,event=branch
             type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/feature/gmail-icon-panel' }}
 
       - name: Generate date tags
         id: date_tags
         run: |
           DATE=$(date +%Y-%m-%d)
-          SHA_SHORT=$(echo "${{ github.sha }}" | head -c 8)
-          echo "date_tag=$DATE" >> $GITHUB_OUTPUT
-          echo "date_sha_tag=$DATE-$SHA_SHORT" >> $GITHUB_OUTPUT
+          echo "date_tag=$DATE" >> "$GITHUB_OUTPUT"
+          echo "date_sha_tag=$DATE-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -59,7 +76,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }},ghcr.io/${{ github.repository }}:${{ steps.date_tags.outputs.date_tag }},ghcr.io/${{ github.repository }}:${{ steps.date_tags.outputs.date_sha_tag }}
+          tags: ${{ steps.meta.outputs.tags }},${{ steps.image.outputs.name }}:${{ steps.date_tags.outputs.date_tag }},${{ steps.image.outputs.name }}:${{ steps.date_tags.outputs.date_sha_tag }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

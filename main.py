@@ -82,6 +82,18 @@ WEATHER_REFRESH_MINUTES = max(int(os.environ.get("WEATHER_REFRESH_MINUTES", "240
 WEATHER_API_LIMIT_ENABLED = os.environ.get("WEATHER_API_LIMIT_ENABLED", "true").lower() in ("true", "1", "yes")
 WEATHER_API_DAILY_LIMIT = int(os.environ.get("WEATHER_API_DAILY_LIMIT", "999"))  # hard cap on API calls per 24h
 PAGE_REFRESH_INTERVAL_MINUTES = int(os.environ.get("PAGE_REFRESH_INTERVAL_MINUTES", "30"))
+
+# --- Gmail panel (icon row above the calendar) ---
+# Gmail cannot be embedded in an iframe: mail.google.com responds with
+# "X-Frame-Options: SAMEORIGIN", so a browser refuses to render it in a frame.
+# The kiosk therefore opens Gmail in a popup window positioned exactly over the
+# calendar area. GMAIL_SESSION_MINUTES caps how long that popup stays open; when
+# it expires the popup is closed and the kiosk reloads to the home screen.
+GMAIL_ICON_ENABLED = os.environ.get("GMAIL_ICON_ENABLED", "true").lower() in ("true", "1", "yes")
+GMAIL_URL = os.environ.get("GMAIL_URL", "https://mail.google.com/mail/u/0/")
+GMAIL_LABEL = os.environ.get("GMAIL_LABEL", "Gmail")
+GMAIL_SESSION_MINUTES = max(int(os.environ.get("GMAIL_SESSION_MINUTES", "30")), 1)
+
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() in ("true", "1", "yes")
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
 
@@ -804,6 +816,10 @@ async def kiosk_page(request: Request):
         weather=weather,
         weather_enabled=bool(WEATHER_ZIP_CODE and WEATHER_API_KEY),
         weather_units=WEATHER_UNITS,
+        gmail_icon_enabled=GMAIL_ICON_ENABLED,
+        gmail_url=GMAIL_URL,
+        gmail_label=GMAIL_LABEL,
+        gmail_session_ms=GMAIL_SESSION_MINUTES * 60 * 1000,
     )
     return html
 

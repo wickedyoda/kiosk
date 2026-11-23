@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {% if not gmail_icon_enabled %}
   <meta http-equiv="refresh" content="{{ page_refresh_ms // 1000 }}" />
+  {% endif %}
   <title>Kiosk</title>
   <style>
     * {
@@ -49,12 +51,70 @@
       opacity: 1;
     }
 
-    /* Right side — Google Calendar */
+    /* Right side — icon row + Google Calendar */
+    #right-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Icon row — sits above the calendar, outside the zoomed container */
+    #icon-row {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 10px;
+      background: #111;
+      border-bottom: 1px solid #333;
+    }
+
+    #gmail-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #1a1a1a;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #gmail-button:hover,
+    #gmail-button:focus {
+      background: #2a2a2a;
+      border-color: #4fc3f7;
+      outline: none;
+    }
+
+    #gmail-button svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
+    #gmail-session {
+      color: #81c784;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+
+    #gmail-session[hidden] {
+      display: none;
+    }
+
     #calendar-container {
       flex: 1;
       position: relative;
       overflow: hidden;
       background: #000;
+      min-height: 0;
       zoom: {{ calendar_scale }};
     }
 
@@ -192,8 +252,22 @@
       {% endif %}
     </div>
 
-    <!-- Right: Google Calendar (server-rendered from ICS feed) -->
-    <div id="calendar-container">
+    <!-- Right: icon row + Google Calendar (server-rendered from ICS feed) -->
+    <div id="right-column">
+      {% if gmail_icon_enabled %}
+      <div id="icon-row">
+        <button id="gmail-button" type="button" title="Open {{ gmail_label }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+          </svg>
+          <span>{{ gmail_label }}</span>
+        </button>
+        <span id="gmail-session" hidden></span>
+      </div>
+      {% endif %}
+      <div id="calendar-container">
       {% if calendar_events %}
         <div id="calendar-events">
           {% for group in calendar_events %}
@@ -234,6 +308,7 @@
       {% elif weather_enabled %}
       <div id="weather-overlay" style="color: #ffaaaa;">Weather unavailable</div>
       {% endif %}
+      </div>
     </div>
   </div>
 
@@ -275,6 +350,118 @@
       setInterval(nextSlide, slideIntervalMs);
     }
 
+    {% if gmail_icon_enabled %}
+    // --- Gmail panel ---
+    // Gmail responds with "X-Frame-Options: SAMEORIGIN", so it cannot be embedded
+    // in an iframe. It opens in a popup window sized and positioned over the
+    // calendar area. The session is capped at GMAIL_SESSION_MINUTES; on expiry the
+    // popup closes and the kiosk reloads to the home screen.
+    const GMAIL_URL = {{ gmail_url | tojson }};
+    const GMAIL_SESSION_MS = {{ gmail_session_ms }};
+    const PAGE_REFRESH_MS = {{ page_refresh_ms }};
+
+    let gmailWindow = null;
+    let gmailExpiry = 0;
+    let gmailCloseTimer = null;
+    let gmailCountdownTimer = null;
+
+    const gmailSessionEl = document.getElementById('gmail-session');
+
+    // Convert the calendar's viewport rect into screen coordinates for window.open
+    function gmailPopupBounds() {
+      const rect = document.getElementById('calendar-container').getBoundingClientRect();
+      const chromeX = window.screenX || window.screenLeft || 0;
+      const chromeY = window.screenY || window.screenTop || 0;
+      const chromeW = Math.max((window.outerWidth || 0) - (window.innerWidth || 0), 0);
+      const chromeH = Math.max((window.outerHeight || 0) - (window.innerHeight || 0), 0);
+      return {
+        left: Math.round(chromeX + rect.left + chromeW / 2),
+        top: Math.round(chromeY + rect.top + chromeH),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }
+
+    // The session timer is the single source of truth. The popup's "closed" flag is
+    // not reliable for a cross-origin window (it can read true while the window is
+    // still up), so nothing depends on it: closing Gmail early simply reveals the
+    // home screen underneath, which is already the correct view.
+    function gmailSessionActive() {
+      return gmailExpiry > Date.now();
+    }
+
+    function stopGmailTimers() {
+      if (gmailCloseTimer) { clearTimeout(gmailCloseTimer); gmailCloseTimer = null; }
+      if (gmailCountdownTimer) { clearInterval(gmailCountdownTimer); gmailCountdownTimer = null; }
+      if (gmailSessionEl) { gmailSessionEl.hidden = true; gmailSessionEl.textContent = ''; }
+    }
+
+    function closeGmailWindow() {
+      // window.open with a name gives an opener handle; closing it is allowed for a
+      // script-opened window. A detached proxy throws or no-ops, so the call is
+      // guarded and the page reload follows regardless.
+      try { if (gmailWindow) { gmailWindow.close(); } } catch (e) { /* ignore */ }
+      gmailWindow = null;
+    }
+
+    // Timer expiry — close the popup and return to the home screen
+    function endGmailSession() {
+      stopGmailTimers();
+      closeGmailWindow();
+      window.location.reload();
+    }
+
+    function updateGmailCountdown() {
+      if (!gmailSessionEl) return;
+      const left = Math.max(0, gmailExpiry - Date.now());
+      const mins = Math.floor(left / 60000);
+      const secs = Math.floor((left % 60000) / 1000);
+      gmailSessionEl.textContent = 'Gmail session ends in ' + mins + ':' + String(secs).padStart(2, '0');
+      gmailSessionEl.hidden = false;
+    }
+
+    function startGmailSession() {
+      stopGmailTimers();
+      gmailExpiry = Date.now() + GMAIL_SESSION_MS;
+      gmailCloseTimer = setTimeout(endGmailSession, GMAIL_SESSION_MS);
+      gmailCountdownTimer = setInterval(updateGmailCountdown, 1000);
+      updateGmailCountdown();
+    }
+
+    function openGmail() {
+      const b = gmailPopupBounds();
+      const features = 'popup=yes,width=' + b.width + ',height=' + b.height +
+        ',left=' + b.left + ',top=' + b.top +
+        ',menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes';
+      const win = window.open(GMAIL_URL, 'gmail-panel', features);
+      if (!win) {
+        if (gmailSessionEl) {
+          gmailSessionEl.textContent = 'Popup blocked — allow popups for this site';
+          gmailSessionEl.hidden = false;
+        }
+        return;
+      }
+      gmailWindow = win;
+      try { win.focus(); } catch (e) { /* ignore */ }
+      startGmailSession();
+    }
+
+    const gmailButton = document.getElementById('gmail-button');
+    if (gmailButton) {
+      gmailButton.addEventListener('click', openGmail);
+    }
+
+    // Page refresh is deferred while a Gmail session is active so the popup is not
+    // orphaned by a background reload.
+    function schedulePageRefresh() {
+      setTimeout(function () {
+        if (gmailSessionActive()) { schedulePageRefresh(); return; }
+        window.location.reload();
+      }, PAGE_REFRESH_MS);
+    }
+    schedulePageRefresh();
+    {% endif %}
+
     // --- On-demand reload poller (for displays without keyboards/mice) ---
     // When /reload is hit externally, this detects it and reloads the page
     async function checkReload() {
@@ -282,6 +469,9 @@
         const res = await fetch('/api/reload');
         const data = await res.json();
         if (data.reload) {
+          {% if gmail_icon_enabled %}
+          if (gmailSessionActive()) { return; }
+          {% endif %}
           window.location.reload();
         }
       } catch (e) {

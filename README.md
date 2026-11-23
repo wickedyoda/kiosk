@@ -298,8 +298,12 @@ sudo reboot
 | `SLIDESHOW_INTERVAL_MINUTES` | How often photos change | `15` |
 | `PAGE_REFRESH_INTERVAL_MINUTES` | How often the full page reloads | `30` |
 | `CALENDAR_REFRESH_INTERVAL_MINUTES` | How often the calendar iframe reloads | `30` |
-| `CALENDAR_SCALE` | Scale factor for calendar content (e.g. 1.5, 2.0) | `2.0` |
+| `CALENDAR_SCALE` | Scale factor for calendar content (e.g. 1.5, 2.0) | `1.5` |
 | `CALENDAR_INVERT` | Invert calendar colors for kiosk display | `true` |
+| `GMAIL_ICON_ENABLED` | Show the Gmail icon row above the calendar | `true` |
+| `GMAIL_URL` | Gmail URL opened by the icon | `https://mail.google.com/mail/u/0/` |
+| `GMAIL_LABEL` | Text shown on the Gmail icon | `Gmail` |
+| `GMAIL_SESSION_MINUTES` | Session cap before the popup closes and the kiosk reloads | `30` |
 | `WEATHER_ZIP_CODE` | US ZIP code for weather overlay (empty = disabled) | _(empty)_ |
 | `WEATHER_API_KEY` | OpenWeatherMap API key (if WEATHER_ZIP_CODE is set) | _(empty)_ |
 | `WEATHER_UNITS` | `imperial` (°F) or `metric` (°C) | `imperial` |
@@ -364,6 +368,41 @@ sudo reboot
 - The "Add to Calendar" button is **disabled** (`showAdd=0`) — kiosk displays have no input devices
 - Calendar text can be scaled via `CALENDAR_SCALE` and colors can be inverted via `CALENDAR_INVERT`
 - No Google API authentication is needed — just a public calendar
+
+### Gmail Panel (icon row above the calendar)
+
+An icon row sits above the calendar. Clicking **Gmail** opens the mailbox in a
+popup window positioned over the calendar area, so the display does not lose the
+kiosk page.
+
+**Why a popup and not an iframe.** Gmail sends `X-Frame-Options: SAMEORIGIN`, and
+its sign-in flow redirects to `accounts.google.com`. A browser refuses to render
+Gmail inside a frame, so an embedded panel would show a blank rectangle. The
+popup is a separate top-level window, which Google allows.
+
+**Session behaviour.**
+
+- The popup opens at the size and position of the calendar container, so it lands
+  exactly over the calendar on a fullscreen kiosk display.
+- The session is capped at `GMAIL_SESSION_MINUTES` (default 30), measured from the
+  moment Gmail opens. On expiry the popup closes and the kiosk reloads to the home
+  screen (pictures + calendar).
+- Closing the popup early needs no action: the kiosk page is still underneath, so
+  the home screen is revealed as soon as Gmail goes away.
+- The page refresh is deferred while a Gmail session is active, so the popup is
+  never orphaned by a background reload. The refresh resumes once the session ends.
+- A countdown badge in the icon row shows the time remaining.
+
+The timer is a **session cap, not true inactivity detection**. Gmail is a
+cross-origin page, so the kiosk cannot observe typing or scrolling inside it. If
+Gmail's own session expires first, Google shows its sign-in page inside the popup.
+
+Set `GMAIL_ICON_ENABLED=false` to hide the icon row entirely; the page then keeps
+the classic `<meta http-equiv="refresh">` behaviour.
+
+**Kiosk client.** The setup script launches Chromium with `--disable-popup-blocking`
+so the Gmail window opens without a popup prompt. Re-run
+`kiosk-client-setup.sh` on an existing client (option 2) to pick up the flag.
 
 ---
 
