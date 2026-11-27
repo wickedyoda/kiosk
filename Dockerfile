@@ -15,8 +15,8 @@ RUN apt-get update \
 COPY requirements.lock .
 RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.lock \
-    && sed -i '/^setuptools==/d' /usr/local/lib/python3.12/site-packages/pip/_vendor/vendor.txt \
-    && python -c "import json,pathlib;p=pathlib.Path('/usr/local/lib/python3.12/site-packages/pip/_vendor/bom.cdx.json');d=json.loads(p.read_text());d['components']=[c for c in d.get('components',[]) if c.get('name')!='setuptools'];p.write_text(json.dumps(d,indent=2))"
+    && sed -i '/^setuptools==/d' /usr/local/lib/python3.*/site-packages/pip/_vendor/vendor.txt \
+    && python -c "import glob,json;f=glob.glob('/usr/local/lib/python3.*/site-packages/pip/_vendor/bom.cdx.json')[0];d=json.load(open(f));d['components']=[c for c in d.get('components',[]) if c.get('name')!='setuptools'];open(f,'w').write(json.dumps(d,indent=2))"
 
 COPY . .
 
